@@ -14,9 +14,9 @@ namespace Common;
 public abstract class VisualizationLayer : Layer, IDisposable
 {
     private const float MinZoom = 1.0f;
-    private const float MaxZoom = 150f;
-    private const float CamDragSpeed = 2.5f;
-    private const float CamZoomSpeed = 15f;
+    private const float MaxZoom = 250f;
+    private const float CamDragSpeed = 5f;
+    private const float CamZoomSpeed = 50f;
 
     private readonly GameApplication _app;
     private readonly ImGuiLayer _imGui;
@@ -52,6 +52,7 @@ public abstract class VisualizationLayer : Layer, IDisposable
     }
 
     protected Vector2 Mouse => _cameraController.Camera.MouseToWorld2D(_app.Input.MousePosition, _app.Window.Width, _app.Window.Height);
+    protected Vector2di MouseI => Mouse.Map(mouse => new Vector2di((int)MathF.Round(mouse.X), (int)MathF.Round(mouse.Y)));
 
     protected abstract void ImGuiOnSubmit(ImGuiRenderer sender);
 
@@ -86,7 +87,7 @@ public abstract class VisualizationLayer : Layer, IDisposable
         RegisterHandler<MouseEvent>(OnMouseEvent);
     }
 
-    private bool OnMouseEvent(MouseEvent @event)
+    protected bool OnMouseEvent(MouseEvent @event)
     {
         if (@event is { MouseButton: MouseButton.Right, Down: true })
         {
@@ -96,8 +97,17 @@ public abstract class VisualizationLayer : Layer, IDisposable
         {
             _dragCamera = false;
         }
+        else
+        {
+            HandleMouse(@event);
+        }
 
         return true;
+    }
+
+    protected virtual void HandleMouse(MouseEvent e)
+    {
+
     }
 
     private void UpdatePipelines()

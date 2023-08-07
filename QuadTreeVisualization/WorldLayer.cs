@@ -1,10 +1,15 @@
 ﻿using System.Numerics;
+using System.Xml.Linq;
 using Common;
 using GameFramework;
 using GameFramework.Extensions;
 using GameFramework.ImGui;
 using GameFramework.Renderer;
+using GameFramework.Renderer.Batch;
+using GameFramework.Utilities.Extensions;
+using ImGuiNET;
 using Veldrid;
+using Rectangle = System.Drawing.Rectangle;
 
 namespace QuadTreeVisualization;
 
@@ -12,16 +17,124 @@ internal class WorldLayer : VisualizationLayer
 {
     public WorldLayer(GameApplication app, ImGuiLayer imGui) : base(app, imGui) { }
 
+    private BitQuadTree? _tree;
+
+    private int _recreateSize = 1;
+
     protected override void ImGuiOnSubmit(ImGuiRenderer sender)
     {
-        
+        if (ImGui.Begin("Quadtree"))
+        {
+            ImGui.SliderInt("Log", ref _recreateSize, 1, 10);
+
+            if (ImGui.Button("Recreate"))
+            {
+                _tree = new BitQuadTree(Vector2di.Zero, 1 << _recreateSize);
+            }
+        }
+
+        ImGui.End();
+    }
+
+    protected override void HandleMouse(MouseEvent e)
+    {
+        var mouse = MouseI * new Vector2di(1, -1);
+
+        if (_tree != null && _tree.NodeRectangle.Contains(mouse))
+        {
+            if (e is { Down: false, MouseButton: MouseButton.Left })
+            {
+                if (_tree.Contains(mouse))
+                {
+                    _tree.Remove(mouse);
+                }
+                else
+                {
+                    _tree.Insert(mouse);
+                }
+            }
+        }
+    }
+
+    private readonly Dictionary<Rectangle, Vector4> _nodeColors = new();
+
+    private Vector4 GetNodeColor(Rectangle nodeRectangle) => _nodeColors.GetOrAdd(nodeRectangle, _ =>
+    {
+        var random = new Random();
+        return random.NextVector4(min: 0.5f) with { W = 1 };
+    });
+
+    private void RenderNodes(QuadBatch batch)
+    {
+        if (_tree == null)
+        {
+            return;
+        }
+
+        void Visit(BitQuadTree node)
+        {
+            var tl = new Vector2(node.Position.X, -node.Position.Y) - new Vector2(0.5f, -0.5f);
+            var sz = node.Size;
+
+            if (!(node.IsFilled || node.Size == 1))
+            {
+                batch.Quad(tl + new Vector2(sz / 2f, -sz / 2f), new Vector2(sz), GetNodeColor(node.NodeRectangle) * new Vector4(1, 1, 1, 0.1f));
+
+                for (byte i = 0; i < 4; i++)
+                {
+                    node.GetChild((BitQuadTree.Quadrant)i)?.Also(Visit);
+                }
+            }
+        }
+
+        Visit(_tree);
+    }
+
+    private void RenderSilkscreen(QuadBatch batch)
+    {
+        if (_tree == null)
+        {
+            return;
+        }
+
+        void Visit(BitQuadTree node)
+        {
+            var tl = new Vector2(node.Position.X, -node.Position.Y) - new Vector2(0.5f, -0.5f);
+            var sz = node.Size;
+
+            if (node.IsFilled || node.Size == 1)
+            {
+                batch.Quad(tl + new Vector2(sz / 2f, -sz / 2f), new Vector2(0.2f), RgbaFloat4.Red);
+            }
+            else
+            {
+                var color = GetNodeColor(node.NodeRectangle) * new Vector4(1, 1, 1, 0.8f);
+
+                var dx = new Vector2(sz, 0);
+                var dy = new Vector2(0, sz);
+                var dx2 = dx / 2f;
+                var dy2 = dy / 2f;
+
+                for (byte i = 0; i < 4; i++)
+                {
+                    node.GetChild((BitQuadTree.Quadrant)i)?.Also(Visit);
+                }
+
+                batch.Line(tl, tl + dx, color, 0.2f);
+                batch.Line(tl - dy, tl - dy + dx, color, 0.2f);
+                batch.Line(tl, tl - dy, color, 0.2f);
+                batch.Line(tl + dx, tl + dx - dy, color, 0.2f);
+                batch.Line(tl - dy2, tl + dx - dy2, color, 0.2f);
+                batch.Line(tl + dx2, tl + dx2 - dy, color, 0.2f);
+            }
+        }
+
+        Visit(_tree);
     }
 
     protected override void RenderStack()
     {
-        RenderPass(batch =>
-        {
-            batch.Quad(Vector2.Zero, Vector2.One, RgbaFloat4.Red);
-        });
+        RenderPass(RenderNodes);
+        RenderPass(RenderSilkscreen);
     }
 }
