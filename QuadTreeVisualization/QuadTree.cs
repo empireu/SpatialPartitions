@@ -120,6 +120,20 @@ public struct LinkedQuadTreeNode
     }
 }
 
+/*
+ * A more compact quadtree implementation with arbitrary stored data.
+ *
+ * Naive quadtree implementations usually store references to the child nodes, which adds a lot of overhead.
+ * This implementation only stores 2 pointers, and the total size of the node is 64 bits.
+ * - Child - pointer to the first node in a linked list of children
+ * - Sibling - pointer to the next node in the linked list
+ * 5 bits are used for flags, which leaves 29 bits for the two pointers.
+ *
+ * An even more compact quadtree could be built by placing child nodes contiguous in memory, and removing the Sibling pointer. This would reduce the node size to 32 bits.
+ * Implementing this would be a bit more difficult; it would be akin to writing a memory allocator.
+ * Performance would be improved across the board on traversal/queries.
+ */
+
 public sealed class LinkedQuadTree<T> where T : struct
 {
     public delegate bool TraverseDelegate(int index, Vector2di position, byte log, in LinkedQuadTreeNode node);
