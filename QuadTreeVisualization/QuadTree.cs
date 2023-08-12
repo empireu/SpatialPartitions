@@ -1,8 +1,5 @@
-﻿using System.Collections.Generic;
-using System.Diagnostics;
-using System.Numerics;
+﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Xml.Linq;
 using Common;
 
 namespace QuadTreeVisualization;
@@ -711,12 +708,12 @@ public sealed class LinkedQuadTree<T> where T : struct
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int CompareChildren((int, Quadrant) a, (int, Quadrant) b) => ((int)a.Item2).CompareTo((int)b.Item2);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Quadrant GetChildQuadrant(Vector2di parentPos, int parentSize, Vector2di childPos)
     {
         var isLeft = childPos.X < parentPos.X + parentSize / 2;
-        var isBottom = childPos.Y <= parentPos.Y - parentSize / 2;
 
-        if (isBottom)
+        if (childPos.Y <= parentPos.Y - parentSize / 2)
         {
             return isLeft ? Quadrant.BottomLeft : Quadrant.BottomRight;
         }
@@ -724,22 +721,20 @@ public sealed class LinkedQuadTree<T> where T : struct
         return isLeft ? Quadrant.TopLeft : Quadrant.TopRight;
     }
 
-    private static Vector2di GetChildPosition(Vector2di parentPos, int parentSize, Quadrant quad)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector2di GetChildPosition(Vector2di parentPos, int parentSize, Quadrant quad) => quad switch
     {
-        return quad switch
-        {
-            Quadrant.TopLeft => parentPos,
-            Quadrant.TopRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y),
-            Quadrant.BottomLeft => new Vector2di(parentPos.X, parentPos.Y - parentSize / 2),
-            Quadrant.BottomRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
-            _ => throw new ArgumentOutOfRangeException(nameof(quad), quad, null)
-        };
-    }
+        Quadrant.TopLeft => parentPos,
+        Quadrant.TopRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y),
+        Quadrant.BottomLeft => new Vector2di(parentPos.X, parentPos.Y - parentSize / 2),
+        Quadrant.BottomRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
+        _ => throw new ArgumentOutOfRangeException(nameof(quad), quad, null)
+    };
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsWithinBounds(Vector2di nodePos, Vector2di targetPos, byte log)
     {
         var size = 1 << log;
-
         return targetPos.X >= nodePos.X && targetPos.Y <= nodePos.Y && targetPos.X < size && targetPos.Y > -size;
     }
 

@@ -33,7 +33,7 @@ internal class WorldLayer : VisualizationLayer
     {
         if (ImGui.Begin("Quadtree"))
         {
-            ImGui.SliderInt("Log", ref _recreateLog, 1, 10);
+            ImGui.SliderInt("Log", ref _recreateLog, 1, 16);
 
             if (ImGui.Button("Recreate"))
             {
