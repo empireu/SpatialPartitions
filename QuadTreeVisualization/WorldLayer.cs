@@ -16,15 +16,18 @@ internal class WorldLayer : VisualizationLayer
 {
     private enum Material
     {
+        None,
         A,
         B
     }
 
     public WorldLayer(GameApplication app, ImGuiLayer imGui) : base(app, imGui) { }
 
-    private SPQ<Material>? _tree;
+    private LinkedQuadTree<Material>? _tree;
 
     private int _recreateLog = 1;
+
+    private Material _selectedMat = Material.B;
 
     protected override void ImGuiOnSubmit(ImGuiRenderer sender)
     {
@@ -34,7 +37,28 @@ internal class WorldLayer : VisualizationLayer
 
             if (ImGui.Button("Recreate"))
             {
-                _tree = new SPQ<Material>((byte)_recreateLog);
+                _tree = new LinkedQuadTree<Material>((byte)_recreateLog);
+            }
+
+            if (_tree != null)
+            {
+                if (ImGui.Button("A")) _selectedMat = Material.A;
+                if (ImGui.Button("B")) _selectedMat = Material.B;
+
+                ImGui.Text($"Node count: {_tree.NodeCount}");
+
+                var hovered = _tree.Find(MouseI);
+
+                if (hovered != -1)
+                {
+                    var node = _tree.GetNode(hovered);
+                    var data = _tree.GetData(hovered);
+
+                    ImGui.Text($"Hover: {hovered}");
+                    ImGui.Text($"Fill: {node.IsFilled}");
+                    ImGui.Text($"Children: {node.ChildCount} ({node.ChildMask})");
+                    ImGui.Text($"Mat: {data}");
+                }
             }
         }
 
@@ -47,24 +71,16 @@ internal class WorldLayer : VisualizationLayer
 
         if (_tree != null && _tree.IsWithinBounds(mouse))
         {
-            if (!e.Down)
-            {
-                _tree.Insert(mouse, Material.B);
-                ;
-            }
-
             if (e is { Down: false, MouseButton: MouseButton.Left })
             {
-
-
-                /*if (_tree.Contains(mouse))
+                if (_app.Input.IsKeyDown(Key.ShiftLeft))
                 {
                     _tree.Remove(mouse);
                 }
                 else
                 {
-                    _tree.Insert(mouse);
-                }*/
+                    _tree.Insert(mouse, _selectedMat);
+                }
             }
         }
     }
@@ -86,7 +102,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in QuadTreeNode node) =>
+        _tree.Traverse((int idx, Vector2di position, byte log, in LinkedQuadTreeNode node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
@@ -110,7 +126,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in QuadTreeNode node) =>
+        _tree.Traverse((int idx, Vector2di position, byte log, in LinkedQuadTreeNode node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
@@ -118,12 +134,16 @@ internal class WorldLayer : VisualizationLayer
             if (node.IsFilled)
             {
                 var data = _tree.GetData(idx);
-                batch.Quad(tl + new Vector2(sz / 2f, -sz / 2f), new Vector2(0.2f), data switch
+
+                if (data != Material.None)
                 {
-                    Material.A => RgbaFloat4.Red,
-                    Material.B => RgbaFloat4.Cyan,
-                    _ => throw new ArgumentOutOfRangeException()
-                });
+                    batch.Quad(tl + new Vector2(sz / 2f, -sz / 2f), new Vector2(0.2f), data switch
+                    {
+                        Material.A => RgbaFloat4.Red,
+                        Material.B => RgbaFloat4.Cyan,
+                        _ => throw new ArgumentOutOfRangeException()
+                    });
+                }
             }
             else
             {

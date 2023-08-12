@@ -18,7 +18,7 @@ public abstract class VisualizationLayer : Layer, IDisposable
     private const float CamDragSpeed = 5f;
     private const float CamZoomSpeed = 50f;
 
-    private readonly GameApplication _app;
+    protected readonly GameApplication _app;
     private readonly ImGuiLayer _imGui;
 
     private readonly OrthographicCameraController2D _cameraController;
