@@ -23,7 +23,7 @@ internal class WorldLayer : VisualizationLayer
 
     public WorldLayer(GameApplication app, ImGuiLayer imGui) : base(app, imGui) { }
 
-    private ClassicQuadTree<Material>? _tree;
+    private HashedQuadTree<Material>? _tree;
 
     private int _recreateLog = 1;
 
@@ -37,7 +37,7 @@ internal class WorldLayer : VisualizationLayer
 
             if (ImGui.Button("Recreate"))
             {
-                _tree = new ClassicQuadTree<Material>((byte)_recreateLog);
+                _tree = new HashedQuadTree<Material>((byte)_recreateLog);
             }
 
             if (_tree != null)
@@ -51,13 +51,12 @@ internal class WorldLayer : VisualizationLayer
 
                 if (hovered != -1)
                 {
-                    var node = _tree.GetNode(hovered);
-                    var data = _tree.GetData(hovered);
+                    var node = _tree.GetNode((ulong)hovered);
 
                     ImGui.Text($"Hover: {hovered}");
                     ImGui.Text($"Fill: {node.IsFilled}");
-                    ImGui.Text($"Children: {node.Children[0]}, {node.Children[1]}, {node.Children[2]}, {node.Children[3]})");
-                    ImGui.Text($"Mat: {data}");
+                    ImGui.Text($"Children: {(Enum.GetValues<Quadrant>().Sum(x => node.HasChild(x) ? 1 : 0))}");
+                    ImGui.Text($"Mat: {node.Data}");
                 }
             }
         }
@@ -102,7 +101,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in ClassicQuadTreeNode node) =>
+        _tree.Traverse((ulong lc, Vector2di position, byte log, in HashedQuadTree<Material>.Node node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
@@ -126,14 +125,14 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in ClassicQuadTreeNode node) =>
+        _tree.Traverse((ulong lc, Vector2di position, byte log, in HashedQuadTree<Material>.Node node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
 
             if (node.IsFilled)
             {
-                var data = _tree.GetData(idx);
+                var data = node.Data;
 
                 if (data != Material.None)
                 {

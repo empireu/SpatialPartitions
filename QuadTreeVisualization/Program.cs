@@ -1,5 +1,4 @@
-﻿using Common;
-using QuadTreeVisualization;
+﻿using QuadTreeVisualization;
 
 var app = new App();
 
