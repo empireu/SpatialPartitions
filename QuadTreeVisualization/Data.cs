@@ -138,7 +138,15 @@ public struct LinkedQuadTreeNode
  * Performance would be improved across the board on traversal/queries.
  */
 
-public sealed class LinkedQuadTree<T> where T : struct
+public interface QuadTree<T> where T : struct
+{
+    int NodeCount { get; }
+    bool Insert(Vector2di tile, T data);
+    bool Remove(Vector2di tile);
+    int Find(Vector2di tile);
+}
+
+public sealed class LinkedQuadTree<T> : QuadTree<T> where T : struct
 {
     public delegate bool TraverseDelegate(int index, Vector2di position, byte log, in LinkedQuadTreeNode node);
 
@@ -1248,7 +1256,7 @@ public struct ContiguousQuadTreeNode
     }
 }
 
-public sealed class ContiguousQuadTree<T> where T : unmanaged
+public sealed class ContiguousQuadTree<T> : QuadTree<T> where T : unmanaged
 {
     public delegate bool TraverseDelegate(int index, Vector2di position, byte log, in ContiguousQuadTreeNode node);
 
@@ -1896,5 +1904,518 @@ public sealed class ContiguousQuadTree<T> where T : unmanaged
         public ContiguousQuadTreeNode Node { get; init; }
         public T Data { get; init; }
         public Quadrant Quadrant { get; init; }
+    }
+}
+
+public unsafe struct ClassicQuadTreeNode
+{
+    public fixed int Children[4];
+    public bool IsFilled;
+
+    public bool HasChildren => Children[0] != -1 || Children[1] != -1 || Children[2] != -1 || Children[3] != -1;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool HasChild(Quadrant q) => Children[(int)q] != -1;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool HasChild(int q) => Children[q] != -1;
+
+    public void ClearChildren()
+    {
+        Children[0] = -1;
+        Children[1] = -1;
+        Children[2] = -1;
+        Children[3] = -1;
+    }
+}
+
+public sealed class ClassicQuadTree<T> : QuadTree<T> where T : unmanaged
+{
+    public delegate bool TraverseDelegate(int index, Vector2di position, byte log, in ClassicQuadTreeNode node);
+
+    private readonly IEqualityComparer<T> _comparer;
+    private readonly int _root;
+    private readonly Stack<int> _insertRemovePath = new();
+    private readonly Stack<TraverseFrame> _traverseStack = new();
+    private readonly Queue<int> _free = new();
+    private ClassicQuadTreeNode[] _nodes = new ClassicQuadTreeNode[16];
+    private T[] _data = new T[16];
+
+    public ClassicQuadTree(byte log, IEqualityComparer<T>? comparer = null)
+    {
+        _comparer = comparer ?? EqualityComparer<T>.Default;
+        _root = Allocate();
+        Debug.Assert(_root == 0);
+        Log = log;
+    }
+
+    public byte Log { get; }
+
+    public int NodeCount { get; private set; }
+
+    public int Size => 1 << Log;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool AreEqual(T a, T b) => _comparer.Equals(a, b);
+
+    public T GetData(int node) => _data[node];
+    public ClassicQuadTreeNode GetNode(int node) => _nodes[node];
+
+    public bool IsWithinBounds(Vector2di position) => IsWithinBounds(Vector2di.Zero, position, Log);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Quadrant GetChildQuadrant(Vector2di parentPos, int parentSize, Vector2di childPos)
+    {
+        var isLeft = childPos.X < parentPos.X + parentSize / 2;
+
+        if (childPos.Y <= parentPos.Y - parentSize / 2)
+        {
+            return isLeft ? Quadrant.BottomLeft : Quadrant.BottomRight;
+        }
+
+        return isLeft ? Quadrant.TopLeft : Quadrant.TopRight;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector2di GetChildPosition(Vector2di parentPos, int parentSize, Quadrant quad) => quad switch
+    {
+        Quadrant.TopLeft => parentPos,
+        Quadrant.TopRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y),
+        Quadrant.BottomLeft => new Vector2di(parentPos.X, parentPos.Y - parentSize / 2),
+        Quadrant.BottomRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
+        _ => throw new ArgumentOutOfRangeException(nameof(quad), quad, null)
+    };
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsWithinBounds(Vector2di nodePos, Vector2di targetPos, byte log)
+    {
+        var size = 1 << log;
+        return targetPos.X >= nodePos.X && targetPos.Y <= nodePos.Y && targetPos.X < size && targetPos.Y > -size;
+    }
+
+    #region Traversal
+
+    public void Traverse(TraverseDelegate visit)
+    {
+        _traverseStack.Push(new TraverseFrame
+        {
+            Position = Vector2di.Zero,
+            Index = 0,
+            Log = Log
+        });
+
+        TraverseCore(visit);
+
+        _traverseStack.Clear();
+    }
+
+    private unsafe void TraverseCore(TraverseDelegate visit)
+    {
+        while (_traverseStack.Count > 0)
+        {
+            var frame = _traverseStack.Pop();
+
+            ref var node = ref _nodes[frame.Index];
+
+            if (!visit(frame.Index, frame.Position, frame.Log, in node))
+            {
+                return;
+            }
+
+            if (!node.HasChildren)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < 4; i++)
+            {
+                var quad = (Quadrant)i;
+
+                if (node.HasChild(quad))
+                {
+                    _traverseStack.Push(new TraverseFrame
+                    {
+                        Position = GetChildPosition(frame.Position, 1 << frame.Log, quad),
+                        Index = node.Children[(int)quad],
+                        Log = (byte)(frame.Log - 1)
+                    });
+                }
+            }
+        }
+    }
+
+    public unsafe int Find(Vector2di position)
+    {
+        if (!IsWithinBounds(position))
+        {
+            return -1;
+        }
+
+        var parentIdx = 0;
+        var parentLog = Log;
+        var parentPos = Vector2di.Zero;
+
+        while (true)
+        {
+            ref var parent = ref _nodes[parentIdx];
+
+            var parentSize = 1 << parentLog;
+
+            if (parent.IsFilled)
+            {
+                return parentIdx;
+            }
+
+            if (!parent.HasChildren)
+            {
+                return -1;
+            }
+
+            var quad = GetChildQuadrant(parentPos, parentSize, position);
+
+            var childIdx = parent.Children[(int)quad];
+
+            if (childIdx == -1)
+            {
+                return -1;
+            }
+
+            parentPos = GetChildPosition(parentPos, parentSize, quad);
+            parentIdx = childIdx;
+            parentLog = (byte)(parentLog - 1);
+        }
+    }
+
+
+    #endregion
+
+    #region Allocation
+
+    private int Allocate()
+    {
+        if (!_free.TryDequeue(out var pNode))
+        {
+            if (_nodes.Length == NodeCount)
+            {
+                var size = _nodes.Length * 2;
+                Array.Resize(ref _nodes, size);
+                Array.Resize(ref _data, size);
+            }
+
+            pNode = NodeCount;
+        }
+
+        NodeCount++;
+
+        _nodes[pNode].ClearChildren();
+
+        return pNode;
+    }
+
+    private void Free(int node)
+    {
+        if (node is 0 or -1)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _nodes[node] = default;
+        _data[node] = default;
+        _free.Enqueue(node);
+        NodeCount--;
+    }
+
+
+    #endregion
+
+    #region Insertion
+
+    public bool Insert(Vector2di position, T data)
+    {
+        if (!IsWithinBounds(position))
+        {
+            throw new ArgumentOutOfRangeException(nameof(position));
+        }
+
+        var result = InsertCore(Vector2di.Zero, Log, _root, position, data);
+
+        if (result)
+        {
+            Fill();
+        }
+
+        _insertRemovePath.Clear();
+
+        return result;
+    }
+
+    private unsafe bool InsertCore(Vector2di parentPos, byte parentLog, int parentIdx, Vector2di targetPos, T targetData)
+    {
+        while (true)
+        {
+            Debug.Assert(parentLog > 0);
+
+            _insertRemovePath.Push(parentIdx);
+
+            ref var parent = ref _nodes[parentIdx];
+            var parentSize = 1 << parentLog;
+            var targetQuad = GetChildQuadrant(parentPos, parentSize, targetPos);
+
+            if (parent.IsFilled)
+            {
+                var parentData = _data[parentIdx];
+
+                if (AreEqual(parentData, targetData))
+                {
+                    return false;
+                }
+
+                parent.IsFilled = false;
+
+                for (var i = 0; i < 4; i++)
+                {
+                    var pChild = Allocate();
+                    parent = ref _nodes[parentIdx];
+                    parent.Children[i] = pChild;
+                    _nodes[pChild].IsFilled = true;
+                    _data[pChild] = parentData;
+                }
+
+                var childIdx = parent.Children[(int)targetQuad];
+
+                if (parentLog == 1)
+                {
+                    // Set the child here
+                    _data[childIdx] = targetData;
+                    return true;
+                }
+
+                parentPos = GetChildPosition(parentPos, parentSize, targetQuad);
+                parentLog--;
+                parentIdx = childIdx;
+                continue;
+            }
+
+            // Used to determine if we inserted a node.
+            // We need that because we can't rely on comparing the inserted data with the default value, stored in the fresh slot, to determine if we inserted or not.
+            var isNewChild = false;
+            int child;
+
+            if (parent.HasChild(targetQuad))
+            {
+                child = parent.Children[(int)targetQuad];
+            }
+            else
+            {
+                child = Allocate();
+                parent = ref _nodes[parentIdx];
+                parent.Children[(int)targetQuad] = child;
+                isNewChild = true;
+            }
+
+            Debug.Assert(child != -1);
+
+            if (parentLog == 1)
+            {
+                // We'll make sure the size 1 node is filled:
+                _nodes[child].IsFilled = true;
+
+                if (AreEqual(_data[child], targetData))
+                {
+                    // We inserted if and only if this child didn't exist beforehand.
+                    return isNewChild;
+                }
+
+                _data[child] = targetData;
+
+                return true;
+            }
+
+            parentPos = GetChildPosition(parentPos, parentSize, targetQuad);
+            parentLog--;
+            parentIdx = child;
+        }
+    }
+
+    private unsafe void Fill()
+    {
+        while (_insertRemovePath.Count > 0)
+        {
+            var nodeIdx = _insertRemovePath.Pop();
+
+            ref var node = ref _nodes[nodeIdx];
+
+            Debug.Assert(!node.IsFilled);
+
+            if (!node.HasChild(0))
+            {
+                return;
+            }
+
+            var data = _data[node.Children[0]];
+
+            for (var i = 0; i < 4; i++)
+            {
+                var pChild = node.Children[i];
+
+                if (pChild == -1 || !_nodes[pChild].IsFilled || !AreEqual(_data[pChild], data))
+                {
+                    return;
+                }
+            }
+
+            Free(node.Children[0]);
+            Free(node.Children[1]);
+            Free(node.Children[2]);
+            Free(node.Children[3]);
+
+            node.ClearChildren();
+            node.IsFilled = true;
+            
+            _data[nodeIdx] = data;
+        }
+    }
+
+    #endregion
+
+    #region Removal
+
+    public bool Remove(Vector2di position)
+    {
+        if (!IsWithinBounds(position))
+        {
+            throw new ArgumentOutOfRangeException(nameof(position));
+        }
+
+        var result = RemoveCore(Vector2di.Zero, Log, 0, position);
+
+        if (result)
+        {
+            Trim();
+        }
+
+        _insertRemovePath.Clear();
+
+        return result;
+    }
+
+    private unsafe bool RemoveCore(Vector2di parentPos, byte parentLog, int parentIdx, Vector2di targetPos)
+    {
+        while (true)
+        {
+            _insertRemovePath.Push(parentIdx);
+
+            ref var parent = ref _nodes[parentIdx];
+
+            var parentSize = 1 << parentLog;
+            var childQuadrant = GetChildQuadrant(parentPos, parentSize, targetPos);
+
+            if (!parent.IsFilled && !parent.HasChild(childQuadrant))
+            {
+                return false;
+            }
+
+            if (parent.IsFilled)
+            {
+                // We'll have to split it up, like with insert
+
+                var parentData = _data[parentIdx];
+                parent.IsFilled = false;
+
+                if (parentLog == 1)
+                {
+                    for (var i = 0; i < 4; i++)
+                    {
+                        if (i == (int)childQuadrant)
+                        {
+                            continue;
+                        }
+
+                        var pChild = Allocate();
+                        parent = ref _nodes[parentIdx];
+                        _nodes[pChild].IsFilled = true;
+                        _data[pChild] = parentData;
+                        parent.Children[i] = pChild;
+                    }
+
+                    return true;
+                }
+
+                for (var i = 0; i < 4; i++)
+                {
+                    var pChild = Allocate();
+                    parent = ref _nodes[parentIdx];
+                    _nodes[pChild].IsFilled = true;
+                    _data[pChild] = parentData;
+                    parent.Children[i] = pChild;
+                }
+            }
+
+            if (parentLog == 1)
+            {
+                Free(parent.Children[(int)childQuadrant]);
+                parent.Children[(int)childQuadrant] = -1;
+                return true;
+            }
+
+            parentPos = GetChildPosition(parentPos, parentSize, childQuadrant);
+            parentLog = (byte)(parentLog - 1);
+            parentIdx = parent.Children[(int)childQuadrant];
+        }
+    }
+
+    private unsafe void Trim()
+    {
+        while (_insertRemovePath.Count > 0)
+        {
+            var nodeIdx = _insertRemovePath.Pop();
+
+            if (nodeIdx == 0)
+            {
+                return;
+            }
+
+            Debug.Assert(nodeIdx != -1);
+
+            ref var node = ref _nodes[nodeIdx];
+
+            if (node.HasChildren || node.IsFilled)
+            {
+                return;
+            }
+
+            if (!_insertRemovePath.TryPeek(out var parentIdx))
+            {
+                return;
+            }
+
+            ref var parent = ref _nodes[parentIdx];
+
+            for (var i = 0; i < 4; i++)
+            {
+                var quad = (Quadrant)i;
+                var pChild = parent.Children[(int)quad];
+                
+                if (pChild == nodeIdx)
+                {
+                    Free(pChild);
+                    parent.Children[(int)quad] = -1;
+                    goto endIteration;
+                }
+            }
+
+            throw new Exception();
+
+            endIteration:
+            continue;
+        }
+    }
+
+    #endregion
+
+    private readonly struct TraverseFrame
+    {
+        public Vector2di Position { get; init; }
+        public int Index { get; init; }
+        public byte Log { get; init; }
     }
 }

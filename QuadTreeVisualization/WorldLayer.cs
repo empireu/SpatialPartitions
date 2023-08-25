@@ -23,13 +23,13 @@ internal class WorldLayer : VisualizationLayer
 
     public WorldLayer(GameApplication app, ImGuiLayer imGui) : base(app, imGui) { }
 
-    private ContiguousQuadTree<Material>? _tree;
+    private ClassicQuadTree<Material>? _tree;
 
     private int _recreateLog = 1;
 
     private Material _selectedMat = Material.B;
 
-    protected override void ImGuiOnSubmit(ImGuiRenderer sender)
+    protected override unsafe void ImGuiOnSubmit(ImGuiRenderer sender)
     {
         if (ImGui.Begin("Quadtree"))
         {
@@ -37,7 +37,7 @@ internal class WorldLayer : VisualizationLayer
 
             if (ImGui.Button("Recreate"))
             {
-                _tree = new ContiguousQuadTree<Material>((byte)_recreateLog);
+                _tree = new ClassicQuadTree<Material>((byte)_recreateLog);
             }
 
             if (_tree != null)
@@ -56,7 +56,7 @@ internal class WorldLayer : VisualizationLayer
 
                     ImGui.Text($"Hover: {hovered}");
                     ImGui.Text($"Fill: {node.IsFilled}");
-                    ImGui.Text($"Children: {node.ChildCount} ({node.ChildMask})");
+                    ImGui.Text($"Children: {node.Children[0]}, {node.Children[1]}, {node.Children[2]}, {node.Children[3]})");
                     ImGui.Text($"Mat: {data}");
                 }
             }
@@ -102,7 +102,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in ContiguousQuadTreeNode node) =>
+        _tree.Traverse((int idx, Vector2di position, byte log, in ClassicQuadTreeNode node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
@@ -126,7 +126,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in ContiguousQuadTreeNode node) =>
+        _tree.Traverse((int idx, Vector2di position, byte log, in ClassicQuadTreeNode node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;

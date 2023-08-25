@@ -27,7 +27,7 @@ internal static class QuadTreeBenchmarks
                 }
             }
 
-
+            Console.WriteLine($"Log {log:##}: {points.Count} points, {iter} iterations\n");
             Console.WriteLine("RANDOM DATA\n");
 
             Benchmark(iter, log, points);
@@ -77,130 +77,91 @@ internal static class QuadTreeBenchmarks
     {
         var sw = new Stopwatch();
 
-        var linkedTree = new LinkedQuadTree<byte>((byte)log);
-        var contigTree = new ContiguousQuadTree<byte>((byte)log);
+        var times = new List<(QuadTree<byte>, double add, double query, double remove)>();
 
-        var finalLinkedNodeCount = 0;
-        var finalContigNodeCount = 0;
-
-        double Measure(Action b)
+        var trees = new QuadTree<byte>[]
         {
-            sw.Restart();
+            new ClassicQuadTree<byte>((byte)log),
+            new LinkedQuadTree<byte>((byte)log),
+            new ContiguousQuadTree<byte>((byte)log)
+        };
+
+        foreach (var quadTree in trees)
+        {
+            BenchmarkTree(quadTree, iter, points, out var add, out var query, out var remove);
+            times.Add((quadTree, add, query, remove));
+        }
+
+        foreach (var (tree, add, query, remove) in times)
+        {
+            Console.WriteLine($"""
+                              {tree.GetType().Name}:
+                                A: {TimeStr(add)}
+                                Q: {TimeStr(query)}
+                                R: {TimeStr(remove)}
+                              """);
+        }
+
+        return;
+
+        string TimeStr(double time) => $"{time:F3}ms (({((time * 1000.0) / points.Count):F4} µs/p))";
+    }
+
+    private static void BenchmarkTree(QuadTree<byte> tree, int iter, List<(Vector2di, byte)> points, out double avgAddTime, out double avgQueryTime, out double avgRemoveTime)
+    {
+        var times = new List<(double add, double remove, double query)>();
+
+        for (int iteration = 0; iteration < iter; iteration++)
+        {
+            var insertTime = Measure(() =>
+            {
+                for (var index = 0; index < points.Count; index++)
+                {
+                    var (pos, data) = points[index];
+                    tree.Insert(pos, data);
+                }
+            });
+
+            var queryTime = Measure(() =>
+            {
+                for (var i = 0; i < points.Count; i++)
+                {
+                    var index = tree.Find(points[i].Item1);
+                }
+            });
+
+            var removeTime = Measure(() =>
+            {
+                for (var index = 0; index < points.Count; index++)
+                {
+                    var (pos, data) = points[index];
+
+                    if (!tree.Remove(pos))
+                    {
+                        throw new InvalidOperationException();
+                    }
+                }
+            });
+
+            if (tree.NodeCount != 1)
+            {
+                throw new InvalidOperationException();
+            }
+
+            times.Add((insertTime, removeTime, queryTime));
+        }
+
+        avgAddTime = times.Average(x => x.add);
+        avgQueryTime = times.Average(x => x.query);
+        avgRemoveTime = times.Average(x => x.remove);
+        return;
+
+        static double Measure(Action b)
+        {
+            var sw = Stopwatch.StartNew();
             b();
             sw.Stop();
             return sw.Elapsed.TotalMilliseconds;
         }
-
-        var linkedTimes = new List<(double add, double remove, double query)>();
-        var contigTimes = new List<(double add, double remove, double query)>();
-
-        for (int iteration = 0; iteration < iter; iteration++)
-        {
-            // Linked:
-            {
-
-                var linkedInsertTime = Measure(() =>
-                {
-                    for (var index = 0; index < points.Count; index++)
-                    {
-                        var (pos, data) = points[index];
-                        linkedTree.Insert(pos, data);
-                    }
-                });
-
-                finalLinkedNodeCount = linkedTree.NodeCount;
-
-                var linkedQueryTime = Measure(() =>
-                {
-                    for (var i = 0; i < points.Count; i++)
-                    {
-                        var index = linkedTree.Find(points[i].Item1);
-                    }
-
-                });
-
-                var linkedRemoveTime = Measure(() =>
-                {
-                    for (var index = 0; index < points.Count; index++)
-                    {
-                        var (pos, data) = points[index];
-
-                        if (!linkedTree.Remove(pos))
-                        {
-                            throw new InvalidOperationException();
-                        }
-                    }
-                });
-
-                if (linkedTree.NodeCount != 1)
-                {
-                    throw new InvalidOperationException();
-                }
-
-                linkedTimes.Add((linkedInsertTime, linkedRemoveTime, linkedQueryTime));
-
-            }
-
-            // Contig:
-            {
-
-                var contigInsertTime = Measure(() =>
-                {
-                    for (var index = 0; index < points.Count; index++)
-                    {
-                        var (pos, data) = points[index];
-                        contigTree.Insert(pos, data);
-                    }
-                });
-
-                finalContigNodeCount = contigTree.NodeCount;
-
-                var contigQueryTime = Measure(() =>
-                {
-                    for (var i = 0; i < points.Count; i++)
-                    {
-                        var index = contigTree.Find(points[i].Item1);
-                    }
-
-                });
-
-                var contigRemovalTime = Measure(() =>
-                {
-                    for (var index = 0; index < points.Count; index++)
-                    {
-                        var (pos, data) = points[index];
-
-                        if (!contigTree.Remove(pos))
-                        {
-                            throw new InvalidOperationException();
-                        }
-                    }
-                });
-
-                if (contigTree.NodeCount != 1)
-                {
-                    throw new InvalidOperationException();
-                }
-
-                contigTimes.Add((contigInsertTime, contigRemovalTime, contigQueryTime));
-            }
-        }
-
-        var avgLinkedAdd = linkedTimes.Average(x => x.add);
-        var avgLinkedQuery = linkedTimes.Average(x => x.query);
-        var avgLinkedRemove = linkedTimes.Average(x => x.remove);
-        var avgContigAdd = contigTimes.Average(x => x.add);
-        var avgContigQuery = contigTimes.Average(x => x.query);
-        var avgContigRemove = contigTimes.Average(x => x.remove);
-
-        Console.WriteLine($"Log {log:##}: {points.Count} points, nodes: {finalLinkedNodeCount} linked, {finalContigNodeCount} contiguous, {iter} iterations\n" +
-                          $"  Linked:\n" +
-                          $"    Add: {avgLinkedAdd:F3}ms ({((avgLinkedAdd * 1000.0) / points.Count):F4} µs/p)\n" +
-                          $"    Query: {avgLinkedQuery:F3}ms ({((avgLinkedQuery * 1000.0) / points.Count):F4} µs/p)\n" +
-                          $"    Remove: {avgLinkedRemove:F3}ms ({((avgLinkedRemove * 1000.0) / points.Count):F4} µs/p)\n" +
-                          $"  Contiguous:\n" +
-                          $"    Add: {avgContigAdd:F3}ms ({((avgContigAdd * 1000.0) / points.Count):F4} µs/p)\n" +
-                          $"    Query: {avgContigQuery:F3}ms ({((avgContigQuery * 1000.0) / points.Count):F4} µs/p)\n" +
-                          $"    Remove: {avgContigRemove:F3}ms ({((avgContigRemove * 1000.0) / points.Count):F4} µs/p)\n\n");
     }
 }
