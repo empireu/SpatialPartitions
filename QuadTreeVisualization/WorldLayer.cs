@@ -23,7 +23,7 @@ internal class WorldLayer : VisualizationLayer
 
     public WorldLayer(GameApplication app, ImGuiLayer imGui) : base(app, imGui) { }
 
-    private LinkedQuadTree<Material>? _tree;
+    private ContiguousQuadTree<Material>? _tree;
 
     private int _recreateLog = 1;
 
@@ -37,7 +37,7 @@ internal class WorldLayer : VisualizationLayer
 
             if (ImGui.Button("Recreate"))
             {
-                _tree = new LinkedQuadTree<Material>((byte)_recreateLog);
+                _tree = new ContiguousQuadTree<Material>((byte)_recreateLog);
             }
 
             if (_tree != null)
@@ -102,7 +102,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in LinkedQuadTreeNode node) =>
+        _tree.Traverse((int idx, Vector2di position, byte log, in ContiguousQuadTreeNode node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
@@ -126,7 +126,7 @@ internal class WorldLayer : VisualizationLayer
             return;
         }
 
-        _tree.Traverse((int idx, Vector2di position, byte log, in LinkedQuadTreeNode node) =>
+        _tree.Traverse((int idx, Vector2di position, byte log, in ContiguousQuadTreeNode node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
