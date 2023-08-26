@@ -16,9 +16,9 @@ public enum Quadrant : byte
 public interface IQuadTree<in T> where T : struct
 {
     int NodeCount { get; }
-    bool Insert(Vector2di tile, T data);
-    bool Remove(Vector2di tile);
-    int Find(Vector2di tile);
+    bool Insert(Vector2ds tile, T data);
+    bool Remove(Vector2ds tile);
+    int Find(Vector2ds tile);
 }
 
 #region Classic Quadtree
@@ -50,7 +50,7 @@ public unsafe struct ClassicQuadTreeNode
  */
 public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
 {
-    public delegate bool TraverseDelegate(int index, Vector2di position, byte log, in ClassicQuadTreeNode node);
+    public delegate bool TraverseDelegate(int index, Vector2ds position, byte log, in ClassicQuadTreeNode node);
 
     private readonly IEqualityComparer<T> _comparer;
     private readonly int _root;
@@ -80,10 +80,10 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
     public T GetData(int node) => _data[node];
     public ClassicQuadTreeNode GetNode(int node) => _nodes[node];
 
-    public bool IsWithinBounds(Vector2di position) => IsWithinBounds(Vector2di.Zero, position, Log);
+    public bool IsWithinBounds(Vector2ds position) => IsWithinBounds(Vector2ds.Zero, position, Log);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Quadrant GetChildQuadrant(Vector2di parentPos, int parentSize, Vector2di childPos)
+    private static Quadrant GetChildQuadrant(Vector2ds parentPos, int parentSize, Vector2ds childPos)
     {
         var isLeft = childPos.X < parentPos.X + parentSize / 2;
 
@@ -96,17 +96,17 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector2di GetChildPosition(Vector2di parentPos, int parentSize, Quadrant quad) => quad switch
+    private static Vector2ds GetChildPosition(Vector2ds parentPos, int parentSize, Quadrant quad) => quad switch
     {
         Quadrant.TopLeft => parentPos,
-        Quadrant.TopRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y),
-        Quadrant.BottomLeft => new Vector2di(parentPos.X, parentPos.Y - parentSize / 2),
-        Quadrant.BottomRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
+        Quadrant.TopRight => new Vector2ds(parentPos.X + parentSize / 2, parentPos.Y),
+        Quadrant.BottomLeft => new Vector2ds(parentPos.X, parentPos.Y - parentSize / 2),
+        Quadrant.BottomRight => new Vector2ds(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
         _ => throw new ArgumentOutOfRangeException(nameof(quad), quad, null)
     };
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsWithinBounds(Vector2di nodePos, Vector2di targetPos, byte log)
+    private static bool IsWithinBounds(Vector2ds nodePos, Vector2ds targetPos, byte log)
     {
         var size = 1 << log;
         return targetPos.X >= nodePos.X && targetPos.Y <= nodePos.Y && targetPos.X < size && targetPos.Y > -size;
@@ -118,7 +118,7 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
     {
         _traverseStack.Push(new TraverseFrame
         {
-            Position = Vector2di.Zero,
+            Position = Vector2ds.Zero,
             Index = 0,
             Log = Log
         });
@@ -163,7 +163,7 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
         }
     }
 
-    public unsafe int Find(Vector2di position)
+    public unsafe int Find(Vector2ds position)
     {
         if (!IsWithinBounds(position))
         {
@@ -172,7 +172,7 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
 
         var parentIdx = 0;
         var parentLog = Log;
-        var parentPos = Vector2di.Zero;
+        var parentPos = Vector2ds.Zero;
 
         while (true)
         {
@@ -249,14 +249,14 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
 
     #region Insertion
 
-    public bool Insert(Vector2di position, T data)
+    public bool Insert(Vector2ds position, T data)
     {
         if (!IsWithinBounds(position))
         {
             throw new ArgumentOutOfRangeException(nameof(position));
         }
 
-        var result = InsertCore(Vector2di.Zero, Log, _root, position, data);
+        var result = InsertCore(Vector2ds.Zero, Log, _root, position, data);
 
         if (result)
         {
@@ -268,7 +268,7 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
         return result;
     }
 
-    private unsafe bool InsertCore(Vector2di parentPos, byte parentLog, int parentIdx, Vector2di targetPos, T targetData)
+    private unsafe bool InsertCore(Vector2ds parentPos, byte parentLog, int parentIdx, Vector2ds targetPos, T targetData)
     {
         while (true)
         {
@@ -399,14 +399,14 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
 
     #region Removal
 
-    public bool Remove(Vector2di position)
+    public bool Remove(Vector2ds position)
     {
         if (!IsWithinBounds(position))
         {
             throw new ArgumentOutOfRangeException(nameof(position));
         }
 
-        var result = RemoveCore(Vector2di.Zero, Log, 0, position);
+        var result = RemoveCore(Vector2ds.Zero, Log, 0, position);
 
         if (result)
         {
@@ -418,7 +418,7 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
         return result;
     }
 
-    private unsafe bool RemoveCore(Vector2di parentPos, byte parentLog, int parentIdx, Vector2di targetPos)
+    private unsafe bool RemoveCore(Vector2ds parentPos, byte parentLog, int parentIdx, Vector2ds targetPos)
     {
         while (true)
         {
@@ -534,7 +534,7 @@ public sealed class ClassicQuadTree<T> : IQuadTree<T> where T : unmanaged
 
     private readonly struct TraverseFrame
     {
-        public Vector2di Position { get; init; }
+        public Vector2ds Position { get; init; }
         public int Index { get; init; }
         public byte Log { get; init; }
     }
@@ -550,7 +550,7 @@ public abstract class HashedQuadTree
     public const ulong NullCode = 0;
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Quadrant GetChildQuadrant(Vector2di parentPos, int parentSize, Vector2di childPos)
+    public static Quadrant GetChildQuadrant(Vector2ds parentPos, int parentSize, Vector2ds childPos)
     {
         var isLeft = childPos.X < parentPos.X + parentSize / 2;
 
@@ -563,17 +563,17 @@ public abstract class HashedQuadTree
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Vector2di GetChildPosition(Vector2di parentPos, int parentSize, Quadrant quad) => quad switch
+    public static Vector2ds GetChildPosition(Vector2ds parentPos, int parentSize, Quadrant quad) => quad switch
     {
         Quadrant.TopLeft => parentPos,
-        Quadrant.TopRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y),
-        Quadrant.BottomLeft => new Vector2di(parentPos.X, parentPos.Y - parentSize / 2),
-        Quadrant.BottomRight => new Vector2di(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
+        Quadrant.TopRight => new Vector2ds(parentPos.X + parentSize / 2, parentPos.Y),
+        Quadrant.BottomLeft => new Vector2ds(parentPos.X, parentPos.Y - parentSize / 2),
+        Quadrant.BottomRight => new Vector2ds(parentPos.X + parentSize / 2, parentPos.Y - parentSize / 2),
         _ => throw new ArgumentOutOfRangeException(nameof(quad), quad, null)
     };
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool IsWithinBounds(Vector2di nodePos, Vector2di targetPos, byte log)
+    public static bool IsWithinBounds(Vector2ds nodePos, Vector2ds targetPos, byte log)
     {
         var size = 1 << log;
         return targetPos.X >= nodePos.X && targetPos.Y <= nodePos.Y && targetPos.X < size && targetPos.Y > -size;
@@ -587,7 +587,7 @@ public abstract class HashedQuadTree
 
     protected readonly struct TraverseFrame
     {
-        public required Vector2di Position { get; init; }
+        public required Vector2ds Position { get; init; }
         public required ulong Lc { get; init; }
         public required byte Log { get; init; }
     }
@@ -625,7 +625,7 @@ public abstract class HashedQuadTree
  */
 public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : unmanaged
 {
-    public delegate bool TraverseDelegate(ulong lcNode, Vector2di position, byte log, in Node node);
+    public delegate bool TraverseDelegate(ulong lcNode, Vector2ds position, byte log, in Node node);
 
     private readonly IEqualityComparer<T> _comparer;
     private readonly Stack<InsertRemoveFrame> _insertRemoveStack = new();
@@ -647,14 +647,14 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
 
     #region Insertion
 
-    public bool Insert(Vector2di position, T data)
+    public bool Insert(Vector2ds position, T data)
     {
         if (!IsWithinBounds(position))
         {
             throw new ArgumentOutOfRangeException(nameof(position));
         }
 
-        var result = InsertCore(Vector2di.Zero, Log, RootCode, position, data);
+        var result = InsertCore(Vector2ds.Zero, Log, RootCode, position, data);
 
         if (result)
         {
@@ -666,7 +666,7 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
         return result;
     }
 
-    private bool InsertCore(Vector2di parentPos, byte parentLog, ulong lcParent, Vector2di targetPos, T targetData)
+    private bool InsertCore(Vector2ds parentPos, byte parentLog, ulong lcParent, Vector2ds targetPos, T targetData)
     {
         while (true)
         {
@@ -811,7 +811,7 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
     {
         _traverseStack.Push(new TraverseFrame
         {
-            Position = Vector2di.Zero,
+            Position = Vector2ds.Zero,
             Lc = RootCode,
             Log = Log
         });
@@ -860,7 +860,7 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
     #region Search
 
     // todo cuts depth because we cast... oh well
-    public int Find(Vector2di position)
+    public int Find(Vector2ds position)
     {
         if (!IsWithinBounds(position))
         {
@@ -868,7 +868,7 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
         }
 
         var parentLog = Log;
-        var parentPos = Vector2di.Zero;
+        var parentPos = Vector2ds.Zero;
         var parentLc = RootCode;
 
         while (true)
@@ -904,14 +904,14 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
 
     #region Removal
 
-    public bool Remove(Vector2di position)
+    public bool Remove(Vector2ds position)
     {
         if (!IsWithinBounds(position))
         {
             throw new ArgumentOutOfRangeException(nameof(position));
         }
 
-        var result = RemoveCore(Vector2di.Zero, Log, RootCode, position);
+        var result = RemoveCore(Vector2ds.Zero, Log, RootCode, position);
 
         if (result)
         {
@@ -923,7 +923,7 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
         return result;
     }
 
-    private bool RemoveCore(Vector2di parentPos, byte parentLog, ulong lcParent, Vector2di targetPos)
+    private bool RemoveCore(Vector2ds parentPos, byte parentLog, ulong lcParent, Vector2ds targetPos)
     {
         while (true)
         {
@@ -1045,7 +1045,7 @@ public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : u
     private bool AreEqual(T a, T b) => _comparer.Equals(a, b);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsWithinBounds(Vector2di position) => IsWithinBounds(Vector2di.Zero, position, Log);
+    public bool IsWithinBounds(Vector2ds position) => IsWithinBounds(Vector2ds.Zero, position, Log);
 
     public struct Node
     {

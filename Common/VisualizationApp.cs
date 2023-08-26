@@ -15,7 +15,6 @@ public abstract class VisualizationApp : GameApplication
 
     public VisualizationApp(bool relative = false)
     {
-        Sdl2Native.SDL_SetRelativeMouseMode(relative);
         Name = GetType().Name;
         Device.SyncToVerticalBlank = true;
         Window.Title = Name;
@@ -24,6 +23,7 @@ public abstract class VisualizationApp : GameApplication
 
     protected override void RegisterServices(ServiceCollection services)
     {
+        services.AddSingleton<VisualizationApp>(_ => this);
         services.AddSingleton<ImGuiLayer>();
         
         RegisterLayer(services);
@@ -52,5 +52,36 @@ public abstract class VisualizationApp : GameApplication
     {
         ImGui.SaveIniSettingsToDisk(ImGuiName);
         base.Destroy();
+    }
+
+    private bool _relativeMode;
+    private Point _initialMouse;
+
+    public bool InCameraMode => _relativeMode;
+
+    protected override void Update(FrameInfo frameInfo)
+    {
+        if (Input.KeyReleased(Key.Escape))
+        {
+            _relativeMode = !_relativeMode;
+            
+            Sdl2Native.SDL_SetRelativeMouseMode(_relativeMode);
+
+            if (_relativeMode)
+            {
+                _initialMouse = new Point((int)Input.MousePosition.X, (int)Input.MousePosition.Y);
+            }
+            else
+            {
+                Window.SetMousePosition(_initialMouse.X, _initialMouse.Y);
+            }
+
+            Layers.BackToFront.FirstOrDefault(x => x is ImGuiLayer)?.Also(imGuiLayer =>
+            {
+                imGuiLayer.IsEnabled = !_relativeMode;
+            });
+        }
+
+        base.Update(frameInfo);
     }
 }

@@ -86,7 +86,7 @@ internal class WorldLayer : VisualizationLayer2d
 
     private readonly Dictionary<Rectangle, Vector4> _nodeColors = new();
 
-    private Rectangle NodeRectangle(Vector2di pos, byte log) => new Rectangle(pos.X, pos.Y, 1 << log, 1 << log);
+    private Rectangle NodeRectangle(Vector2ds pos, byte log) => new Rectangle(pos.X, pos.Y, 1 << log, 1 << log);
 
     private Vector4 GetNodeColor(Rectangle nodeRectangle) => _nodeColors.GetOrAdd(nodeRectangle, _ =>
     {
@@ -101,7 +101,7 @@ internal class WorldLayer : VisualizationLayer2d
             return;
         }
 
-        _tree.Traverse((ulong lc, Vector2di position, byte log, in HashedQuadTree<Material>.Node node) =>
+        _tree.Traverse((ulong lc, Vector2ds position, byte log, in HashedQuadTree<Material>.Node node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;
@@ -125,7 +125,7 @@ internal class WorldLayer : VisualizationLayer2d
             return;
         }
 
-        _tree.Traverse((ulong lc, Vector2di position, byte log, in HashedQuadTree<Material>.Node node) =>
+        _tree.Traverse((ulong lc, Vector2ds position, byte log, in HashedQuadTree<Material>.Node node) =>
         {
             var tl = new Vector2(position.X, position.Y) - new Vector2(0.5f, -0.5f);
             var sz = 1 << log;

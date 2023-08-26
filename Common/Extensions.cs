@@ -3,6 +3,7 @@ using GameFramework.Extensions;
 using GameFramework.Renderer;
 using GameFramework.Renderer.Batch;
 using Veldrid;
+using Vortice.Mathematics;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace Common;
@@ -20,17 +21,17 @@ public static class Extensions
         return m(t);
     }
 
-    public static Vector2di Step(this Direction2d dir) => dir switch
+    public static Vector2ds Step(this Direction2d dir) => dir switch
     {
-        Direction2d.L => new Vector2di(-1, 0),
-        Direction2d.R => new Vector2di(1, 0),
-        Direction2d.U => new Vector2di(0, -1),
-        Direction2d.D => new Vector2di(0, 1),
+        Direction2d.L => new Vector2ds(-1, 0),
+        Direction2d.R => new Vector2ds(1, 0),
+        Direction2d.U => new Vector2ds(0, -1),
+        Direction2d.D => new Vector2ds(0, 1),
         _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, $"Unexpected direction {dir}")
     };
 
-    public static bool Contains(this Rectangle rect, Vector2di p) => rect.Contains(p.X, p.Y);
-    public static Vector2di CenterI(this Rectangle rect) => new(rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
+    public static bool Contains(this Rectangle rect, Vector2ds p) => rect.Contains(p.X, p.Y);
+    public static Vector2ds CenterI(this Rectangle rect) => new(rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
     public static Vector2 Center(this Rectangle rect) => new(rect.X + rect.Width / 2f, rect.Y + rect.Height / 2f);
 
     public static bool ApproxEq(this float f, float other, float threshold = 1e-7f)
@@ -55,7 +56,8 @@ public static class Extensions
     private static readonly Matrix4x4 CubeQuadUp = Matrix4x4.CreateRotationX(-MathF.PI / 2) * Matrix4x4.CreateTranslation(0, 0.5f, 0);
     private static readonly Matrix4x4 CubeQuadDown = Matrix4x4.CreateRotationX(MathF.PI / 2) * Matrix4x4.CreateTranslation(0, -0.5f, 0);
 
-    public static void ColoredQuadCube(
+    // Uses 6 quads
+    public static void ColoredQuadBox(
         this QuadBatch batch, 
         Matrix4x4 transform,
         QuadColors forward,
@@ -73,8 +75,94 @@ public static class Extensions
         batch.Quad(CubeQuadDown * transform, down);
     }
 
-    public static void ColoredQuadCube(this QuadBatch batch, Matrix4x4 transform, QuadColors color)
+    public static void ColoredQuadBox(
+        this QuadBatch batch,
+        Matrix4x4 transform,
+        QuadColors forward,
+        QuadColors backward,
+        QuadColors left,
+        QuadColors right,
+        QuadColors up,
+        QuadColors down, 
+        Direction3dMask mask)
     {
-        ColoredQuadCube(batch, transform, color, color, color, color, color, color);
+        if (mask.HasFlag(Direction3dMask.F))
+        {
+            batch.Quad(CubeQuadForward * transform, forward);
+        }
+
+        if (mask.HasFlag(Direction3dMask.B))
+        {
+            batch.Quad(CubeQuadBackward * transform, backward);
+        }
+
+        if (mask.HasFlag(Direction3dMask.L))
+        {
+            batch.Quad(CubeQuadLeft * transform, left);
+        }
+
+        if (mask.HasFlag(Direction3dMask.R))
+        {
+            batch.Quad(CubeQuadRight * transform, right);
+        }
+
+        if (mask.HasFlag(Direction3dMask.U))
+        {
+            batch.Quad(CubeQuadUp * transform, up);
+        }
+
+        if (mask.HasFlag(Direction3dMask.D))
+        {
+            batch.Quad(CubeQuadDown * transform, down);
+        }
+    }
+
+    public static void ColoredQuadBox(this QuadBatch batch, Matrix4x4 transform, QuadColors color)
+    {
+        ColoredQuadBox(batch, transform, color, color, color, color, color, color);
+    }
+
+    public static void ColoredQuadBox(this QuadBatch batch, Matrix4x4 transform, QuadColors color, Direction3dMask mask)
+    {
+        ColoredQuadBox(batch, transform, color, color, color, color, color, color, mask);
+    }
+
+    // Uses 56 quads
+    public static void ColoredQuadBoxFrame(this QuadBatch batch, Vector3 min, Vector3 max, float thickness, QuadColors colors)
+    {
+        var a = Matrix4x4.CreateScale(max.X - min.X - thickness, thickness, thickness) * 
+                Matrix4x4.CreateTranslation(min with { X = (min.X + max.X) / 2f });
+        
+        var b = Matrix4x4.CreateScale(thickness, thickness, max.Z - min.Z - thickness) * 
+                Matrix4x4.CreateTranslation(min with { Z = (min.Z + max.Z) / 2f });
+        
+        var c = Matrix4x4.CreateScale(max.X - min.X, thickness, thickness) *
+                Matrix4x4.CreateTranslation(min with { X = (min.X + max.X) / 2f, Z = max.Z });
+      
+        var d = Matrix4x4.CreateScale(thickness, thickness, max.Z - min.Z - thickness) *
+                Matrix4x4.CreateTranslation(min with { Z = (min.Z + max.Z) / 2f, X = max.X });
+
+        const Direction3dMask ex = Direction3dMask.F | Direction3dMask.B | Direction3dMask.U | Direction3dMask.D;
+        const Direction3dMask ez = Direction3dMask.L | Direction3dMask.R | Direction3dMask.U | Direction3dMask.D;
+
+        // Lower horizontal edges:
+        ColoredQuadBox(batch, a, colors, ex);
+        ColoredQuadBox(batch, b, colors, ez);
+        ColoredQuadBox(batch, c, colors, ex);
+        ColoredQuadBox(batch, d, colors, ez);
+
+        // Upper horizontal edges:
+        ColoredQuadBox(batch, a with { Translation = a.Translation with { Y = max.Y } }, colors, ex);
+        ColoredQuadBox(batch, b with { Translation = b.Translation with { Y = max.Y } }, colors, ez);
+        ColoredQuadBox(batch, c with { Translation = c.Translation with { Y = max.Y } }, colors, ex);
+        ColoredQuadBox(batch, d with { Translation = d.Translation with { Y = max.Y } }, colors, ez);
+
+        // Vertical edges:
+        var edgeScale = Matrix4x4.CreateScale(thickness, max.Y - min.Y + thickness, thickness);
+        var edgeY = (min.Y + max.Y) / 2f;
+        ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY }), colors);
+        ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY, Z = max.Z }), colors);
+        ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY, X = max.X }), colors);
+        ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY, X = max.X, Z = max.Z }), colors);
     }
 }

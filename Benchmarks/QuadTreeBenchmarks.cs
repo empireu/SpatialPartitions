@@ -12,18 +12,18 @@ internal static class QuadTreeBenchmarks
         float pointDensity,
         float structureSize,
         byte values,
-        out List<(Vector2di, byte)> randomPoints,
-        out List<(Vector2di, byte)> structuredPoints)
+        out List<(Vector2ds, byte)> randomPoints,
+        out List<(Vector2ds, byte)> structuredPoints)
     {
-        randomPoints = new List<(Vector2di, byte)>();
+        randomPoints = new List<(Vector2ds, byte)>();
 
-        var hs = new HashSet<Vector2di>();
+        var hs = new HashSet<Vector2ds>();
         var size = 1 << log;
         var cpTarget = Math.Max(1, size * size * pointDensity);
 
         while (randomPoints.Count < cpTarget)
         {
-            var pos = new Vector2di(Random.Shared.Next(0, size), -Random.Shared.Next(0, size));
+            var pos = new Vector2ds(Random.Shared.Next(0, size), -Random.Shared.Next(0, size));
 
             if (hs.Add(pos))
             {
@@ -34,19 +34,19 @@ internal static class QuadTreeBenchmarks
         hs.Clear();
 
         var structureUb = (int)Math.Ceiling(size * structureSize);
-        var structuredGrid = new Dictionary<Vector2di, byte>();
+        var structuredGrid = new Dictionary<Vector2ds, byte>();
 
         while (structuredGrid.Count < cpTarget)
         {
-            var topLeft = new Vector2di(Random.Shared.Next(0, size - 1), -Random.Shared.Next(0, size - 1));
-            var extent = new Vector2di(Random.Shared.Next(1, Math.Min(structureUb, size - topLeft.X)), Random.Shared.Next(1, Math.Min(structureUb, size + topLeft.Y)));
+            var topLeft = new Vector2ds(Random.Shared.Next(0, size - 1), -Random.Shared.Next(0, size - 1));
+            var extent = new Vector2ds(Random.Shared.Next(1, Math.Min(structureUb, size - topLeft.X)), Random.Shared.Next(1, Math.Min(structureUb, size + topLeft.Y)));
             var type = RandomTileType();
 
             for (int y = topLeft.Y; y > topLeft.Y - extent.Y; y--)
             {
                 for (int x = topLeft.X; x < topLeft.X + extent.X; x++)
                 {
-                    structuredGrid[new Vector2di(x, y)] = type;
+                    structuredGrid[new Vector2ds(x, y)] = type;
                 }
             }
         }
@@ -86,7 +86,7 @@ internal static class QuadTreeBenchmarks
         }
     }
 
-    private static void PrintBenchmarks(int iter, int log, List<(Vector2di, byte)> points)
+    private static void PrintBenchmarks(int iter, int log, List<(Vector2ds, byte)> points)
     {
         var sw = new Stopwatch();
 
@@ -119,7 +119,7 @@ internal static class QuadTreeBenchmarks
         string TimeStr(double time) => $"{time:F3}ms (({((time * 1000.0) / points.Count):F4} µs/p))";
     }
 
-    private static void BenchmarkTree(IQuadTree<byte> tree, int iter, List<(Vector2di, byte)> points, out double avgAddTime, out double avgQueryTime, out double avgRemoveTime)
+    private static void BenchmarkTree(IQuadTree<byte> tree, int iter, List<(Vector2ds, byte)> points, out double avgAddTime, out double avgQueryTime, out double avgRemoveTime)
     {
         var times = new List<(double add, double remove, double query)>();
 

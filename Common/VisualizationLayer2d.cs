@@ -52,7 +52,7 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
     }
 
     protected Vector2 Mouse => _cameraController.Camera.MouseToWorld2D(App.Input.MousePosition, App.Window.Width, App.Window.Height);
-    protected Vector2di MouseI => Mouse.Map(mouse => new Vector2di((int)MathF.Round(mouse.X), (int)MathF.Round(mouse.Y)));
+    protected Vector2ds MouseI => Mouse.Map(mouse => new Vector2ds((int)MathF.Round(mouse.X), (int)MathF.Round(mouse.Y)));
 
     protected abstract void ImGuiOnSubmit(ImGuiRenderer sender);
 

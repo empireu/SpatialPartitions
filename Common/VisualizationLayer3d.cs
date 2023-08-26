@@ -12,13 +12,12 @@ namespace Common;
 
 public abstract class VisualizationLayer3d : Layer, IDisposable
 {
-    protected readonly GameApplication App;
+    protected readonly VisualizationApp App;
     private readonly ImGuiLayer _imGui;
     protected readonly PerspectiveCameraController CameraController;
     private readonly QuadBatch _batch;
-    private readonly PostProcessor _postProcess;
 
-    public VisualizationLayer3d(GameApplication app, ImGuiLayer imGui)
+    public VisualizationLayer3d(VisualizationApp app, ImGuiLayer imGui)
     {
         App = app;
         _imGui = imGui;
@@ -27,11 +26,6 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
         CameraController.MoveSpeed = 5f;
 
         _batch = app.Resources.BatchPool.Get();
-
-        _postProcess = new PostProcessor(app)
-        {
-            BackgroundColor = RgbaFloat.Black
-        };
 
         UpdatePipelinesAndView();
 
@@ -52,16 +46,14 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
         _batch.Effects = QuadBatchEffects.Transformed(CameraController.Camera.CameraMatrix);
         _batch.Clear();
         body(_batch);
-        _batch.Submit(framebuffer: _postProcess.InputFramebuffer);
+        _batch.Submit();
     }
 
     protected sealed override void Render(FrameInfo frameInfo)
     {
-        _postProcess.ClearColor();
         _rendering = true;
         RenderStack();
         _rendering = false;
-        _postProcess.Render();
     }
 
     protected abstract void RenderStack();
@@ -78,11 +70,12 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
 
     private void UpdatePipelinesAndView()
     {
-        _postProcess.ResizeInputs(App.Window.Size() * 2);
-        _postProcess.SetOutput(App.Device.SwapchainFramebuffer);
         _batch.UpdatePipelines(
-            outputDescription: _postProcess.InputFramebuffer.OutputDescription, 
-            depthStencilState: DepthStencilStateDescription.DepthOnlyLessEqual);
+            outputDescription: App.Device.SwapchainFramebuffer.OutputDescription,
+            depthStencilState: DepthStencilStateDescription.DepthOnlyLessEqual,
+            blendState: BlendStateDescription.SingleAlphaBlend
+        );
+
         CameraController.SetAspect(App.Window.Width, App.Window.Height);
     }
 
@@ -111,7 +104,11 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
     protected override void Update(FrameInfo frameInfo)
     {
         base.Update(frameInfo);
-        UpdateCamera(frameInfo);
+
+        if (App.InCameraMode)
+        {
+            UpdateCamera(frameInfo);
+        }
     }
 
     private bool _disposed;
