@@ -1,9 +1,9 @@
-﻿using System.Drawing;
-using System.Numerics;
+﻿using System.Numerics;
 using GameFramework.Extensions;
 using GameFramework.Renderer;
 using GameFramework.Renderer.Batch;
-using Vortice.Direct3D;
+using Veldrid;
+using Rectangle = System.Drawing.Rectangle;
 
 namespace Common;
 
@@ -46,5 +46,35 @@ public static class Extensions
     public static void Quad(this QuadBatch batch, Rectangle rect, RgbaFloat4 color)
     {
         batch.Quad(new Vector2(rect.X, -rect.Y), new Vector2(rect.Width, rect.Height), color, align: AlignMode.TopLeft);
+    }
+
+    private static readonly Matrix4x4 CubeQuadForward = Matrix4x4.CreateRotationY(0) * Matrix4x4.CreateTranslation(0, 0, 0.5f);
+    private static readonly Matrix4x4 CubeQuadBackward = Matrix4x4.CreateRotationY(MathF.PI) * Matrix4x4.CreateTranslation(0, 0, -0.5f);
+    private static readonly Matrix4x4 CubeQuadLeft = Matrix4x4.CreateRotationY(-MathF.PI / 2) * Matrix4x4.CreateTranslation(-0.5f, 0, 0);
+    private static readonly Matrix4x4 CubeQuadRight = Matrix4x4.CreateRotationY(MathF.PI / 2) * Matrix4x4.CreateTranslation(0.5f, 0, 0);
+    private static readonly Matrix4x4 CubeQuadUp = Matrix4x4.CreateRotationX(-MathF.PI / 2) * Matrix4x4.CreateTranslation(0, 0.5f, 0);
+    private static readonly Matrix4x4 CubeQuadDown = Matrix4x4.CreateRotationX(MathF.PI / 2) * Matrix4x4.CreateTranslation(0, -0.5f, 0);
+
+    public static void ColoredQuadCube(
+        this QuadBatch batch, 
+        Matrix4x4 transform,
+        QuadColors forward,
+        QuadColors backward,
+        QuadColors left,
+        QuadColors right,
+        QuadColors up,
+        QuadColors down)
+    {
+        batch.Quad(CubeQuadForward * transform, forward);
+        batch.Quad(CubeQuadBackward * transform, backward);
+        batch.Quad(CubeQuadLeft * transform, left);
+        batch.Quad(CubeQuadRight * transform, right);
+        batch.Quad(CubeQuadUp * transform, up);
+        batch.Quad(CubeQuadDown * transform, down);
+    }
+
+    public static void ColoredQuadCube(this QuadBatch batch, Matrix4x4 transform, QuadColors color)
+    {
+        ColoredQuadCube(batch, transform, color, color, color, color, color, color);
     }
 }

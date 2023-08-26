@@ -12,7 +12,7 @@ using Rectangle = System.Drawing.Rectangle;
 
 namespace QuadTreeVisualization;
 
-internal class WorldLayer : VisualizationLayer
+internal class WorldLayer : VisualizationLayer2d
 {
     private enum Material
     {
@@ -72,7 +72,7 @@ internal class WorldLayer : VisualizationLayer
         {
             if (e is { Down: false, MouseButton: MouseButton.Left })
             {
-                if (_app.Input.IsKeyDown(Key.ShiftLeft))
+                if (App.Input.IsKeyDown(Key.ShiftLeft))
                 {
                     _tree.Remove(mouse);
                 }

@@ -3,6 +3,7 @@ using GameFramework.ImGui;
 using ImGuiNET;
 using Microsoft.Extensions.DependencyInjection;
 using Veldrid;
+using Veldrid.Sdl2;
 
 namespace Common;
 
@@ -12,8 +13,9 @@ public abstract class VisualizationApp : GameApplication
 
     private string ImGuiName => $"imgui_{Name}.ini";
 
-    public VisualizationApp()
+    public VisualizationApp(bool relative = false)
     {
+        Sdl2Native.SDL_SetRelativeMouseMode(relative);
         Name = GetType().Name;
         Device.SyncToVerticalBlank = true;
         Window.Title = Name;

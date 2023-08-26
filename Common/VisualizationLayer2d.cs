@@ -11,14 +11,14 @@ using Veldrid;
 
 namespace Common;
 
-public abstract class VisualizationLayer : Layer, IDisposable
+public abstract class VisualizationLayer2d : Layer, IDisposable
 {
     private const float MinZoom = 1.0f;
     private const float MaxZoom = 250f;
     private const float CamDragSpeed = 5f;
     private const float CamZoomSpeed = 50f;
 
-    protected readonly GameApplication _app;
+    protected readonly GameApplication App;
     private readonly ImGuiLayer _imGui;
 
     private readonly OrthographicCameraController2D _cameraController;
@@ -26,9 +26,9 @@ public abstract class VisualizationLayer : Layer, IDisposable
     private readonly PostProcessor _postProcess;
     private bool _dragCamera;
 
-    public VisualizationLayer(GameApplication app, ImGuiLayer imGui)
+    public VisualizationLayer2d(GameApplication app, ImGuiLayer imGui)
     {
-        _app = app;
+        App = app;
         _imGui = imGui;
 
         _cameraController = new OrthographicCameraController2D(
@@ -51,7 +51,7 @@ public abstract class VisualizationLayer : Layer, IDisposable
         imGui.Submit += ImGuiOnSubmit;
     }
 
-    protected Vector2 Mouse => _cameraController.Camera.MouseToWorld2D(_app.Input.MousePosition, _app.Window.Width, _app.Window.Height);
+    protected Vector2 Mouse => _cameraController.Camera.MouseToWorld2D(App.Input.MousePosition, App.Window.Width, App.Window.Height);
     protected Vector2di MouseI => Mouse.Map(mouse => new Vector2di((int)MathF.Round(mouse.X), (int)MathF.Round(mouse.Y)));
 
     protected abstract void ImGuiOnSubmit(ImGuiRenderer sender);
@@ -112,10 +112,10 @@ public abstract class VisualizationLayer : Layer, IDisposable
 
     private void UpdatePipelines()
     {
-        _cameraController.Camera.AspectRatio = _app.Window.Width / (float)_app.Window.Height;
+        _cameraController.Camera.AspectRatio = App.Window.Width / (float)App.Window.Height;
 
-        _postProcess.ResizeInputs(_app.Window.Size() * 2);
-        _postProcess.SetOutput(_app.Device.SwapchainFramebuffer);
+        _postProcess.ResizeInputs(App.Window.Size() * 2);
+        _postProcess.SetOutput(App.Device.SwapchainFramebuffer);
         _batch.UpdatePipelines(outputDescription: _postProcess.InputFramebuffer.OutputDescription);
     }
 
@@ -132,11 +132,11 @@ public abstract class VisualizationLayer : Layer, IDisposable
         {
             if (_dragCamera)
             {
-                var delta = (_app.Input.MouseDelta / new Vector2(_app.Window.Width, _app.Window.Height)) * new Vector2(-1, 1) * _cameraController.Camera.Zoom * CamDragSpeed;
+                var delta = (App.Input.MouseDelta / new Vector2(App.Window.Width, App.Window.Height)) * new Vector2(-1, 1) * _cameraController.Camera.Zoom * CamDragSpeed;
                 _cameraController.FuturePosition2 += delta;
             }
 
-            _cameraController.FutureZoom += _app.Input.ScrollDelta * CamZoomSpeed * frameInfo.DeltaTime;
+            _cameraController.FutureZoom += App.Input.ScrollDelta * CamZoomSpeed * frameInfo.DeltaTime;
             _cameraController.FutureZoom = Math.Clamp(_cameraController.FutureZoom, MinZoom, MaxZoom);
         }
 
@@ -160,6 +160,6 @@ public abstract class VisualizationLayer : Layer, IDisposable
 
         _disposed = true;
 
-        _app.Resources.BatchPool.Return(_batch);
+        App.Resources.BatchPool.Return(_batch);
     }
 }

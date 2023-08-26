@@ -623,7 +623,7 @@ public abstract class HashedQuadTree
  *  - To allow a depth of 31, 94 bits would be needed.
  *
  */
-public sealed unsafe class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : unmanaged
+public sealed class HashedQuadTree<T> : HashedQuadTree, IQuadTree<T> where T : unmanaged
 {
     public delegate bool TraverseDelegate(ulong lcNode, Vector2di position, byte log, in Node node);
 
