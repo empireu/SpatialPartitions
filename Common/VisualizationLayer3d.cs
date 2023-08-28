@@ -1,9 +1,7 @@
 ﻿using System.Drawing;
 using GameFramework;
-using GameFramework.Extensions;
 using GameFramework.ImGui;
 using GameFramework.Layers;
-using GameFramework.PostProcessing;
 using GameFramework.Renderer.Batch;
 using GameFramework.Scene;
 using Veldrid;
@@ -13,9 +11,19 @@ namespace Common;
 public abstract class VisualizationLayer3d : Layer, IDisposable
 {
     protected readonly VisualizationApp App;
-    private readonly ImGuiLayer _imGui;
     protected readonly PerspectiveCameraController CameraController;
-    private readonly QuadBatch _batch;
+    private readonly ImGuiLayer _imGui;
+    private readonly QuadBatch _mainBatch;
+
+    private readonly List<QuadBatch> _batches = new();
+
+    protected QuadBatch GetBatch()
+    {
+        CheckDisposed();
+        var batch = App.Resources.BatchPool.Get();
+        _batches.Add(batch);
+        return batch;
+    }
 
     public VisualizationLayer3d(VisualizationApp app, ImGuiLayer imGui)
     {
@@ -25,7 +33,7 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
         CameraController = PerspectiveCameraController.CreateDefault();
         CameraController.MoveSpeed = 5f;
 
-        _batch = app.Resources.BatchPool.Get();
+        _mainBatch = GetBatch();
 
         UpdatePipelinesAndView();
 
@@ -35,18 +43,34 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
     protected abstract void ImGuiOnSubmit(ImGuiRenderer sender);
 
     private bool _rendering;
-    
-    protected void RenderPass(Action<QuadBatch> body)
+    private bool _userBatchesInitialized;
+
+    protected void SetCameraTransform(QuadBatch batch)
     {
+        batch.Effects = batch.Effects with { Transform = CameraController.Camera.CameraMatrix };
+    }
+
+    protected void RenderPass(QuadBatch batch, Action<QuadBatch> body)
+    {
+        CheckDisposed();
+
+        SetCameraTransform(batch);
+        
+        batch.Clear();
+        body(batch);
+        batch.Submit();
+    }
+
+    protected void RenderPassMain(Action<QuadBatch> body)
+    {
+        CheckDisposed();
+
         if (!_rendering)
         {
             throw new InvalidOperationException();
         }
 
-        _batch.Effects = QuadBatchEffects.Transformed(CameraController.Camera.CameraMatrix);
-        _batch.Clear();
-        body(_batch);
-        _batch.Submit();
+        RenderPass(_mainBatch, body);
     }
 
     protected sealed override void Render(FrameInfo frameInfo)
@@ -61,22 +85,14 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
     protected override void OnAdded()
     {
         RegisterHandler<MouseEvent>(HandleMouse);
+
+        UpdateBatchPipelines(App.Device.SwapchainFramebuffer.OutputDescription);
+        _userBatchesInitialized = true;
     }
 
     protected virtual bool HandleMouse(MouseEvent e)
     {
         return true;
-    }
-
-    private void UpdatePipelinesAndView()
-    {
-        _batch.UpdatePipelines(
-            outputDescription: App.Device.SwapchainFramebuffer.OutputDescription,
-            depthStencilState: DepthStencilStateDescription.DepthOnlyLessEqual,
-            blendState: BlendStateDescription.SingleAlphaBlend
-        );
-
-        CameraController.SetAspect(App.Window.Width, App.Window.Height);
     }
 
     protected override void Resize(Size size)
@@ -86,6 +102,41 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
         UpdatePipelinesAndView();
     }
 
+    private void UpdatePipelinesAndView()
+    {
+        var outputDesc = App.Device.SwapchainFramebuffer.OutputDescription;
+
+        _mainBatch.UpdatePipelines(
+            outputDescription: outputDesc,
+            depthStencilState: DepthStencilStateDescription.DepthOnlyLessEqual,
+            blendState: BlendStateDescription.SingleAlphaBlend
+        );
+
+        if (_userBatchesInitialized)
+        {
+            UpdateBatchPipelines(outputDesc);
+        }
+
+        CameraController.SetAspect(App.Window.Width, App.Window.Height);
+    }
+   
+    protected virtual void UpdateBatchPipelines(OutputDescription outputDesc)
+    {
+
+    }
+
+    protected override void Update(FrameInfo frameInfo)
+    {
+        CheckDisposed();
+
+        base.Update(frameInfo);
+
+        if (App.InCameraMode)
+        {
+            UpdateCamera(frameInfo);
+        }
+    }
+  
     private void UpdateCamera(FrameInfo frameInfo)
     {
         if (_imGui.Captured)
@@ -101,14 +152,9 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
         CameraController.ProcessMouse(App.Input.MouseDelta, frameInfo.DeltaTime);
     }
 
-    protected override void Update(FrameInfo frameInfo)
+    private void CheckDisposed()
     {
-        base.Update(frameInfo);
-
-        if (App.InCameraMode)
-        {
-            UpdateCamera(frameInfo);
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     private bool _disposed;
@@ -122,6 +168,9 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
 
         _disposed = true;
 
-        App.Resources.BatchPool.Return(_batch);
+        foreach (var quadBatch in _batches)
+        {
+            App.Resources.BatchPool.Return(quadBatch);
+        }
     }
 }

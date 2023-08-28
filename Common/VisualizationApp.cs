@@ -1,6 +1,9 @@
 ﻿using GameFramework;
+using GameFramework.Assets;
 using GameFramework.ImGui;
+using GameFramework.Renderer.Text;
 using ImGuiNET;
+using MessagePack;
 using Microsoft.Extensions.DependencyInjection;
 using Veldrid;
 using Veldrid.Sdl2;
@@ -9,21 +12,31 @@ namespace Common;
 
 public abstract class VisualizationApp : GameApplication
 {
+    static VisualizationApp()
+    {
+        MessagePackSerializer.DefaultOptions = MessagePack.Resolvers.ContractlessStandardResolver.Options;
+    }
+
     public string Name { get; }
 
     private string ImGuiName => $"imgui_{Name}.ini";
 
-    public VisualizationApp(bool relative = false)
+    public SdfFont Font { get; }
+
+    public VisualizationApp()
     {
         Name = GetType().Name;
         Device.SyncToVerticalBlank = true;
         Window.Title = Name;
         ClearColor = RgbaFloat.Black;
+
+        Font = Resources.AssetManager.GetOrAddFont(new EmbeddedResourceKey(typeof(VisualizationApp).Assembly, "Common.Assets.Roboto.font"));
     }
 
     protected override void RegisterServices(ServiceCollection services)
     {
         services.AddSingleton<VisualizationApp>(_ => this);
+        services.AddSingleton<SdfFont>(_ => Font);
         services.AddSingleton<ImGuiLayer>();
         
         RegisterLayer(services);

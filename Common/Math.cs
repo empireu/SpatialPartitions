@@ -1,4 +1,6 @@
-﻿namespace Common;
+﻿using System.Runtime.CompilerServices;
+
+namespace Common;
 
 public static class Mathx
 {
@@ -14,6 +16,18 @@ public static class Mathx
     public static double SnzE(double a) => a >= 0.0 ? SnzEpsilonDouble : -SnzEpsilonDouble;
     public static float SnzE(float a) => a >= 0.0 ? SnzEpsilonFloat : -SnzEpsilonFloat;
     public static int MatchSign(int a, int targetSign) => Math.Sign(a) == targetSign ? 1 : 0;
+
+    public static int Rsb(int a) => (a & -1) >>> 31;
+
+    public static byte Rsb2(int a)
+    {
+        unchecked
+        {
+            var x = (uint)a & -1;
+            return (byte)(x >> 31);
+        }
+    }
+
 
     public static double Lerp(double a, double b, double t) => a + ((b - a) * t);
 }

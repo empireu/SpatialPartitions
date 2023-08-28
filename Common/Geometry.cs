@@ -189,6 +189,7 @@ public readonly struct Vector3di : IComparable<Vector3di>
     public int X { get; init; }
     public int Y { get; init; }
     public int Z { get; init; }
+
     public int NormSqr => X * X + Y * Y + Z * Z;
     public double Norm => Math.Sqrt(NormSqr);
     public float NormF => MathF.Sqrt(NormSqr);
@@ -215,14 +216,35 @@ public readonly struct Vector3di : IComparable<Vector3di>
 
     public override int GetHashCode() => HashCode.Combine(X, Y, Z);
 
-    public int CompareTo(Vector3di other) => this.NormSqr.CompareTo(other.NormSqr);
+    public int CompareTo(Vector3di other) => NormSqr.CompareTo(other.NormSqr);
 
+    public static Vector3di operator +(Vector3di a) => a;
+    public static Vector3di operator -(Vector3di a) => new(-a.X, -a.Y, -a.Z);
+    public static Vector3di operator ~(Vector3di a) => new(~a.X, ~a.Y, ~a.Z);
     public static Vector3di operator +(Vector3di a, Vector3di b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
+    public static Vector3di operator +(Vector3di a, int b) => new(a.X + b, a.Y + b, a.Z + b);
     public static Vector3di operator -(Vector3di a, Vector3di b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
+    public static Vector3di operator -(Vector3di a, int b) => new(a.X - b, a.Y - b, a.Z - b);
     public static Vector3di operator *(Vector3di a, Vector3di b) => new(a.X * b.X, a.Y * b.Y, a.Z * b.Z);
-    public static Vector3di operator /(Vector3di a, Vector3di b) => new(a.X / b.X, a.Y / b.Y, a.Z / b.Z);
     public static Vector3di operator *(Vector3di a, int scalar) => new(a.X * scalar, a.Y * scalar, a.Z * scalar);
+    public static Vector3di operator /(Vector3di a, Vector3di b) => new(a.X / b.X, a.Y / b.Y, a.Z / b.Z);
     public static Vector3di operator /(Vector3di a, int scalar) => new(a.X / scalar, a.Y / scalar, a.Z / scalar);
+    public static Vector3di operator <<(Vector3di a, int shl) => new(a.X << shl, a.Y << shl, a.Z << shl);
+    public static Vector3di operator >>(Vector3di a, int shr) => new(a.X >> shr, a.Y >> shr, a.Z >> shr);
+    public static Vector3di operator <<(Vector3di a, Vector3di b) => new(a.X << b.X, a.Y << b.Y, a.Z << b.Z);
+    public static Vector3di operator >>(Vector3di a, Vector3di b) => new(a.X >> b.X, a.Y >> b.Y, a.Z >> b.Z);
+    public static Vector3di operator &(Vector3di a, int b) => new(a.X & b, a.Y & b, a.Z & b);
+    public static Vector3di operator &(Vector3di a, Vector3di b) => new(a.X & b.X, a.Y & b.Y, a.Z & b.Z);
+    public static Vector3di operator |(Vector3di a, int b) => new(a.X | b, a.Y | b, a.Z | b);
+    public static Vector3di operator |(Vector3di a, Vector3di b) => new(a.X | b.X, a.Y | b.Y, a.Z | b.Z);
+    public static Vector3di operator ^(Vector3di a, int b) => new(a.X ^ b, a.Y ^ b, a.Z ^ b);
+    public static Vector3di operator ^(Vector3di a, Vector3di b) => new(a.X ^ b.X, a.Y ^ b.Y, a.Z ^ b.Z);
+    public static Vector3di operator %(Vector3di a, int b) => new(a.X % b, a.Y % b, a.Z % b);
+    public static Vector3di operator %(Vector3di a, Vector3di b) => new(a.X % b.X, a.Y % b.Y, a.Z % b.Z);
+    public static bool operator <(Vector3di a, int b) => a.X < b && a.Y < b && a.Z < b;
+    public static bool operator >(Vector3di a, int b) => a.X > b && a.Y > b && a.Z > b;
+    public static bool operator <=(Vector3di a, int b) => a.X <= b && a.Y <= b && a.Z <= b;
+    public static bool operator >=(Vector3di a, int b) => a.X >= b && a.Y >= b && a.Z >= b;
 
     public static bool operator ==(Vector3di a, Vector3di b) => a.Equals(b);
     public static bool operator !=(Vector3di a, Vector3di b) => !a.Equals(b);
@@ -234,4 +256,21 @@ public readonly struct Vector3di : IComparable<Vector3di>
     public static double Distance(Vector3di a, Vector3di b) => (a - b).Norm;
     public static float DistanceF(Vector3di a, Vector3di b) => (a - b).NormF;
     public static int Manhattan(Vector3di a, Vector3di b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) + Math.Abs(a.Z - b.Z);
+}
+
+public readonly struct BoundingBox3di
+{
+    public Vector3di Min { get; init; }
+    public Vector3di Max { get; init; }
+
+    public BoundingBox3di(Vector3di min, Vector3di max)
+    {
+        Min = min;
+        Max = max;
+    }
+
+    public bool Contains(Vector3di point) =>
+        point.X >= Min.X && point.X <= Max.X &&
+        point.Y >= Min.Y && point.Y <= Max.Y &&
+        point.Z >= Min.Z && point.Z <= Max.Z;
 }

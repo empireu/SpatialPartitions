@@ -5,7 +5,7 @@ namespace OctTreeVisualization;
 
 internal sealed class App : VisualizationApp
 {
-    public App() : base(true)
+    public App() : base()
     {
 
     }
