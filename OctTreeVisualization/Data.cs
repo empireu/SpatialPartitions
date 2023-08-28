@@ -73,7 +73,7 @@ public sealed class HashedBitOctree
     public const ulong NullCode = 0;
 
     private readonly Dictionary<ulong, HashedBitOctreeNode> _nodes = new();
-    private readonly Stack<ulong> _insertRemoveStack = new();
+    private readonly Stack<InsertRemoveFrame> _insertRemoveStack = new();
     private readonly Stack<TraverseFrame> _traverseStack = new();
 
     public HashedBitOctree(int log)
@@ -87,11 +87,11 @@ public sealed class HashedBitOctree
     }
 
     public byte Log { get; }
-
     public int EdgeSize => 1 << Log;
     public Vector3di Min => Vector3di.Zero;
     public Vector3di Max => new(EdgeSize);
     public BoundingBox3di Bounds => new(Min, Max);
+    public int NodeCount => _nodes.Count;
 
     public bool IsWithinBounds(Vector3di point) => Bounds.Contains(point);
 
@@ -120,8 +120,6 @@ public sealed class HashedBitOctree
     {
         while (true)
         {
-            _insertRemoveStack.Push(lcNode);
-
             var node = _nodes[lcNode];
 
             if (node.IsFilled)
@@ -130,6 +128,13 @@ public sealed class HashedBitOctree
             }
 
             var octant = DescendOctant(ref targetPos, log);
+
+            _insertRemoveStack.Push(new InsertRemoveFrame
+            {
+                Lc = lcNode,
+                Log = log,
+                Octant = octant
+            });
 
             if (log == 1)
             {
@@ -161,9 +166,9 @@ public sealed class HashedBitOctree
 
     private void Fill()
     {
-        while (_insertRemoveStack.Count > 0)
+        while (_insertRemoveStack.TryPop(out var frame))
         {
-            var lcNode = _insertRemoveStack.Pop();
+            var lcNode = frame.Lc;
             var node = _nodes[lcNode];
 
             Debug.Assert(!node.IsFilled);
@@ -173,16 +178,119 @@ public sealed class HashedBitOctree
                 break;
             }
 
-            for (byte i = 0; i < 8; i++)
+            if (frame.Log > 1)
             {
-                Debug.Assert(node.HasChild(i));
-                _nodes.Remove(ChildCode(lcNode, i));
+                for (byte i = 0; i < 8; i++)
+                {
+                    Debug.Assert(node.HasChild(i));
+#if DEBUG
+                    Debug.Assert(_nodes.Remove(ChildCode(lcNode, i)));
+#else
+                    _nodes.Remove(ChildCode(lcNode, i));
+#endif
+                }
             }
 
             node.ResetChildren();
             node.IsFilled = true;
 
             _nodes[lcNode] = node;
+        }
+    }
+
+    #endregion
+
+    #region Removal
+
+    public bool Remove(Vector3di tile)
+    {
+        if (!IsWithinBounds(tile))
+        {
+            throw new ArgumentOutOfRangeException(nameof(tile), "Outside of the bounds of the octree");
+        }
+
+        var result = RemoveCore(RootCode, Log, tile);
+
+        if (result)
+        {
+            Trim();
+        }
+
+        _insertRemoveStack.Clear();
+
+        return result;
+    }
+
+    private bool RemoveCore(ulong lcNode, byte log, Vector3di targetPos)
+    {
+        while (true)
+        {
+            var node = _nodes[lcNode];
+            var octant = DescendOctant(ref targetPos, log);
+
+            _insertRemoveStack.Push(new InsertRemoveFrame
+            {
+                Lc = lcNode,
+                Log = log,
+                Octant = octant
+            });
+
+            if (node.IsFilled)
+            {
+                node.IsFilled = false;
+                node.ActivateChildren();
+
+                if (log > 1)
+                {
+                    // Split into 8 nodes:
+                    for (byte i = 0; i < 8; i++)
+                    {
+                        _nodes.Add(ChildCode(lcNode, i), new HashedBitOctreeNode
+                        {
+                            IsFilled = true
+                        });
+                    }
+                }
+            }
+            else if (!node.HasChild(octant))
+            {
+                return false;
+            }
+
+            if (log == 1)
+            {
+                node.ResetChild(octant);
+
+                _nodes[lcNode] = node;
+
+                return true;
+            }
+
+            _nodes[lcNode] = node;
+            lcNode = ChildCode(lcNode, octant);
+            --log;
+        }
+    }
+
+    private void Trim()
+    {
+        while (_insertRemoveStack.TryPop(out var frame) && _insertRemoveStack.Count > 0)
+        {
+            var node = _nodes[frame.Lc];
+
+            if (node.IsFilled || node.HasChildren)
+            {
+                return;
+            }
+
+            var parentFrame = _insertRemoveStack.Peek();
+            var parentNode = _nodes[parentFrame.Lc];
+
+            Debug.Assert(parentNode.HasChild(parentFrame.Octant));
+
+            parentNode.ResetChild(parentFrame.Octant);
+            _nodes[parentFrame.Lc] = parentNode;
+            _nodes.Remove(frame.Lc);
         }
     }
 
@@ -236,6 +344,46 @@ public sealed class HashedBitOctree
 
     #endregion
 
+    #region Search
+
+    public bool Contains(Vector3di targetPos)
+    {
+        if (!IsWithinBounds(targetPos))
+        {
+            return false;
+        }
+
+        var lcNode = RootCode;
+        var log = Log;
+
+        while (true)
+        {
+            var node = _nodes[lcNode];
+
+            if (node.IsFilled)
+            {
+                return true;
+            }
+
+            var octant = DescendOctant(ref targetPos, log);
+
+            if (!node.HasChild(octant))
+            {
+                return false;
+            }
+
+            if (log == 1)
+            {
+                return node.HasChild(octant);
+            }
+
+            lcNode = ChildCode(lcNode, octant);
+            --log;
+        }
+    }
+
+    #endregion
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ulong ChildCode(ulong lc, byte child) => (lc << 3) | child;
 
@@ -264,10 +412,17 @@ public sealed class HashedBitOctree
         );
     }
 
+    private readonly struct InsertRemoveFrame
+    {
+        public required ulong Lc { get; init; }
+        public required byte Log { get; init; }
+        public required byte Octant { get; init; }
+    }
+
     private readonly struct TraverseFrame
     {
-        public ulong? Lc { get; init; }
-        public Vector3di Position { get; init; }
-        public byte Log { get; init; }
+        public required ulong? Lc { get; init; }
+        public required Vector3di Position { get; init; }
+        public required byte Log { get; init; }
     }
 }

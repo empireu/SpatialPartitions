@@ -11,7 +11,8 @@ namespace OctTreeVisualization;
 
 internal sealed class WorldLayer : VisualizationLayer3d
 {
-    private readonly QuadBatch _treeBatch;
+    private readonly QuadBatch _proxyBatch;
+    private readonly QuadBatch _voxelBatch;
     private HashedBitOctree? _octree;
 
     private int _recreateLog = 2;
@@ -21,17 +22,24 @@ internal sealed class WorldLayer : VisualizationLayer3d
     
     public WorldLayer(VisualizationApp app, ImGuiLayer imGui) : base(app, imGui)
     {
-        _treeBatch = GetBatch();
+        _proxyBatch = GetBatch();
+        _voxelBatch = GetBatch();
 
         CameraController.MoveSpeed = 5f;
     }
 
     protected override void UpdateBatchPipelines(OutputDescription outputDesc)
     {
-        _treeBatch.UpdatePipelines(
+        _proxyBatch.UpdatePipelines(
             outputDescription: outputDesc, 
             blendState: BlendStateDescription.SingleAdditiveBlend, 
             depthStencilState: DepthStencilStateDescription.Disabled
+        );
+
+        _voxelBatch.UpdatePipelines(
+            outputDescription: outputDesc,
+            blendState: BlendStateDescription.SingleAlphaBlend,
+            depthStencilState: DepthStencilStateDescription.DepthOnlyLessEqual
         );
     }
 
@@ -44,17 +52,57 @@ internal sealed class WorldLayer : VisualizationLayer3d
             if (ImGui.Button("Create"))
             {
                 _octree = new HashedBitOctree((byte)_recreateLog);
+                RenderTree();
             }
 
             if (_octree != null)
             {
+                ImGui.Text($"Nodes: {_octree.NodeCount}");
+                ImGui.Text($"Contains: {_octree.Contains(new Vector3di(_placeX, _placeY, _placeZ))}");
+
                 ImGui.SliderInt("X", ref _placeX, _octree.Min.X, _octree.Max.X - 1);
                 ImGui.SliderInt("Y", ref _placeY, _octree.Min.Y, _octree.Max.Y - 1);
                 ImGui.SliderInt("Z", ref _placeZ, _octree.Min.Z, _octree.Max.Z - 1);
 
-                if (ImGui.Button("Place"))
+                if (ImGui.IsKeyReleased(ImGuiKey.RightArrow))
+                {
+                    _placeX = Math.Clamp(_placeX + 1, _octree.Min.X, _octree.Max.X - 1);
+                }
+
+                if (ImGui.IsKeyReleased(ImGuiKey.LeftArrow))
+                {
+                    _placeX = Math.Clamp(_placeX - 1, _octree.Min.X, _octree.Max.X - 1);
+                }
+
+                if (ImGui.IsKeyReleased(ImGuiKey.DownArrow))
+                {
+                    _placeZ = Math.Clamp(_placeZ + 1, _octree.Min.Z, _octree.Max.Z - 1);
+                }
+
+                if (ImGui.IsKeyReleased(ImGuiKey.UpArrow))
+                {
+                    _placeZ = Math.Clamp(_placeZ - 1, _octree.Min.Z, _octree.Max.Z - 1);
+                }
+
+                if (ImGui.IsKeyReleased(ImGuiKey.PageUp))
+                {
+                    _placeY = Math.Clamp(_placeY + 1, _octree.Min.Y, _octree.Max.Y - 1);
+                }
+
+                if (ImGui.IsKeyReleased(ImGuiKey.PageDown))
+                {
+                    _placeY = Math.Clamp(_placeY - 1, _octree.Min.Y, _octree.Max.Y - 1);
+                }
+
+                if (ImGui.Button("Place") || ImGui.IsKeyReleased(ImGuiKey.Enter))
                 {
                     Console.WriteLine($"Insert: {_octree.Insert(new Vector3di(_placeX, _placeY, _placeZ))}");
+                    RenderTree();
+                }
+
+                if (ImGui.Button("Remove") || ImGui.IsKeyReleased(ImGuiKey.Backspace))
+                {
+                    Console.WriteLine($"Remove: {_octree.Remove(new Vector3di(_placeX, _placeY, _placeZ))}");
                     RenderTree();
                 }
             }
@@ -63,7 +111,7 @@ internal sealed class WorldLayer : VisualizationLayer3d
         ImGui.End();
     }
 
-    private readonly Dictionary<(Vector3di, byte), QuadColors> _nodeColors = new();
+    private readonly Dictionary<(Vector3di, byte), Vector4> _nodeColors = new();
 
     private void RenderTree()
     {
@@ -72,53 +120,52 @@ internal sealed class WorldLayer : VisualizationLayer3d
             return;
         }
 
-        var batch = _treeBatch;
-
-        batch.Clear();
+        _proxyBatch.Clear();
+        _voxelBatch.Clear();
 
         _octree.Traverse((node, pos, log) =>
         {
             Vector3 min = pos;
             Vector3 max = pos + (1 << log);
+        
+            var color = _nodeColors.GetOrAdd((pos, log), _ => Random.Shared.NextVector4(min: 0.25f, max: 0.8f));
 
             if (node.IsFilled)
             {
-                batch.ColoredQuadBox(Matrix4x4.CreateScale((1 << log) * 0.9f) * Matrix4x4.CreateTranslation(
+                _voxelBatch.ColoredQuadBox(Matrix4x4.CreateScale((1 << log) * 0.9f) * Matrix4x4.CreateTranslation(
                         (min.X + max.X) / 2f, 
                         (min.Y + max.Y) / 2f, 
                         (min.Z + max.Z) / 2f), 
-                    new QuadColors(0.8f, 0.8f, 0.8f, 0.9f)
+                    new QuadColors(color with { W = 1 })
                 );
             }
             else
             {
-                var color = _nodeColors.GetOrAdd((pos, log), _ => new QuadColors(Random.Shared.NextVector4(min: 0.25f, max: 1f) with { W = 0.25f }));
-
-                batch.ColoredQuadBoxFrame(
+                _proxyBatch.ColoredQuadBoxFrame(
                     min,
                     max,
                     0.1f,
-                    color
+                    new QuadColors(color with{ W = 0.25f })
                 );
             }
 
             return true;
         });
 
-        batch.ColoredQuadBoxFrame(_octree.Min, _octree.Max, 0.1f, new QuadColors(RgbaFloat.White));
+        _proxyBatch.ColoredQuadBoxFrame(_octree.Min, _octree.Max, 0.1f, new QuadColors(RgbaFloat.White));
     }
 
     private void RenderHighlight(QuadBatch batch)
     {
         var min = new Vector3(_placeX, _placeY, _placeZ);
 
-        const float margin = 0.1f;
+        const float margin = -0.025f;
 
         batch.ColoredQuadBoxFrame(
             min + new Vector3(margin),
             min + new Vector3(1 - margin),
             0.05f,
-            new QuadColors(0, 1, 1, 0.25f)
+            new QuadColors(0, 0.5f, 0.8f, 1)
         );
     }
 
@@ -155,10 +202,13 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
     protected override void RenderStack()
     {
+        SetCameraTransform(_proxyBatch);
+        SetCameraTransform(_voxelBatch);
+
+        _proxyBatch.Submit();
+        _voxelBatch.Submit();
+
         RenderPassMain(RenderGizmo);
         RenderPassMain(RenderHighlight);
-
-        SetCameraTransform(_treeBatch);
-        _treeBatch.Submit();
     }
 }
