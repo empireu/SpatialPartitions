@@ -122,6 +122,12 @@ public static class Extensions
         ColoredQuadBox(batch, transform, color, color, color, color, color, color);
     }
 
+    public static void ColoredQuadBox(this QuadBatch batch, Vector3 min, Vector3 max, QuadColors color)
+    {
+        ColoredQuadBox(batch, Matrix4x4.CreateScale(max - min) with { Translation = (min + max) / 2f }, color, color, color, color, color, color);
+    }
+
+
     public static void ColoredQuadBox(this QuadBatch batch, Matrix4x4 transform, QuadColors color, Direction3dMask mask)
     {
         ColoredQuadBox(batch, transform, color, color, color, color, color, color, mask);

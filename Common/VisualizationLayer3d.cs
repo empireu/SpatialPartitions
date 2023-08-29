@@ -146,7 +146,9 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
 
         foreach (var key in App.Input.DownKeys)
         {
-            CameraController.ProcessKey(key, frameInfo.DeltaTime);
+            var k = App.Input.IsKeyDown(Key.ShiftLeft) ? 10 : 1;
+
+            CameraController.ProcessKey(key, frameInfo.DeltaTime * k);
         }
 
         CameraController.ProcessMouse(App.Input.MouseDelta, frameInfo.DeltaTime);

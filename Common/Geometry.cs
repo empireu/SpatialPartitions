@@ -256,6 +256,30 @@ public readonly struct Vector3di : IComparable<Vector3di>
     public static double Distance(Vector3di a, Vector3di b) => (a - b).Norm;
     public static float DistanceF(Vector3di a, Vector3di b) => (a - b).NormF;
     public static int Manhattan(Vector3di a, Vector3di b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) + Math.Abs(a.Z - b.Z);
+
+    public static Vector3di Clamp(Vector3di v, Vector3di min, Vector3di max) => new(
+        Math.Clamp(v.X, min.X, max.X),
+        Math.Clamp(v.Y, min.Y, max.Y),
+        Math.Clamp(v.Z, min.Z, max.Z)
+    );
+
+    public static Vector3di Clamp(Vector3di v, int min, int max) => new(
+        Math.Clamp(v.X, min, max),
+        Math.Clamp(v.Y, min, max),
+        Math.Clamp(v.Z, min, max)
+    );
+
+    public static Vector3di Min(Vector3di a, Vector3di b) => new(
+        Math.Min(a.X, b.X),
+        Math.Min(a.Y, b.Y),
+        Math.Min(a.Z, b.Z)
+    );
+
+    public static Vector3di Max(Vector3di a, Vector3di b) => new(
+        Math.Max(a.X, b.X),
+        Math.Max(a.Y, b.Y),
+        Math.Max(a.Z, b.Z)
+    );
 }
 
 public readonly struct BoundingBox3di
@@ -273,4 +297,15 @@ public readonly struct BoundingBox3di
         point.X >= Min.X && point.X <= Max.X &&
         point.Y >= Min.Y && point.Y <= Max.Y &&
         point.Z >= Min.Z && point.Z <= Max.Z;
+
+    public bool Contains(Vector3 point) =>
+        point.X >= Min.X && point.X <= Max.X &&
+        point.Y >= Min.Y && point.Y <= Max.Y &&
+        point.Z >= Min.Z && point.Z <= Max.Z;
+
+    public int DistanceToSqr(Vector3di point) => Contains(point) ? 0 : Vector3di.DistanceSqr(point, Vector3di.Clamp(point, Min, Max));
+    public float DistanceToSqr(Vector3 point) => Contains(point) ? 0 : Vector3.DistanceSquared(point, Vector3.Clamp(point, Min, Max));
+
+    public double DistanceTo(Vector3di point) => Math.Sqrt(DistanceToSqr(point));
+    public float DistanceFTo(Vector3di point) => MathF.Sqrt(DistanceToSqr(point));
 }

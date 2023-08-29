@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Common;
 
@@ -61,6 +62,41 @@ public struct HashedBitOctreeNode
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly bool HasChild(byte childIdx) => ((ChildMask >> childIdx) & 1) > 0;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly int ChildBit(byte childIdx) => ((ChildMask >> childIdx) & 1);
+}
+
+public readonly struct OctreeNodeBounds
+{
+    public OctreeNodeBounds(Vector3di position, byte log)
+    {
+        Position = position;
+        Log = log;
+    }
+
+    public Vector3di Position { get; }
+    public byte Log { get; }
+
+    public static implicit operator BoundingBox3di(OctreeNodeBounds b) => new(b.Position, b.Position + (1 << b.Log));
+}
+
+public readonly struct HashedOctreeNodeInfo
+{
+    public HashedOctreeNodeInfo(ulong? locationCode, HashedBitOctreeNode node, OctreeNodeBounds bounds)
+    {
+        LocationCode = locationCode;
+        Node = node;
+        Bounds = bounds;
+    }
+
+    public ulong? LocationCode { get; }
+
+    public HashedBitOctreeNode Node { get; }
+
+    // Log can be inferred from location code in constant time (if you have clz instructions available),
+    // but position is O(h) so we may as well store both
+    public OctreeNodeBounds Bounds { get; }
 }
 
 // Bit Octree, as in, 2 states per voxel.
@@ -73,13 +109,16 @@ public sealed class HashedBitOctree
     public const ulong NullCode = 0;
 
     private readonly Dictionary<ulong, HashedBitOctreeNode> _nodes = new();
+   
     private readonly Stack<InsertRemoveFrame> _insertRemoveStack = new();
     private readonly Stack<TraverseFrame> _traverseStack = new();
+    private readonly PriorityQueue<NodeInfo, float> _nodeQueryQueue = new();
+    private readonly PriorityQueue<RegionInfo, float> _regionQueryQueue = new();
 
     public HashedBitOctree(int log)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(log, 1, nameof(log));
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(log, 20, nameof(log));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(log, 21, nameof(log));
 
         Log = (byte)log;
 
@@ -90,10 +129,26 @@ public sealed class HashedBitOctree
     public int EdgeSize => 1 << Log;
     public Vector3di Min => Vector3di.Zero;
     public Vector3di Max => new(EdgeSize);
-    public BoundingBox3di Bounds => new(Min, Max);
+    public BoundingBox3di Bounds => new(Min, Max - 1);
     public int NodeCount => _nodes.Count;
 
+    public int Version { get; private set; }
+    
     public bool IsWithinBounds(Vector3di point) => Bounds.Contains(point);
+
+    private void AddNode(ulong code, HashedBitOctreeNode node)
+    {
+        _nodes.Add(code, node);
+    }
+
+    private void RemoveNode(ulong code)
+    {
+#if DEBUG
+        Debug.Assert(_nodes.Remove(code));
+#else
+        _nodes.Remove(code);
+#endif
+    }
 
     #region Insertion
 
@@ -109,6 +164,7 @@ public sealed class HashedBitOctree
         if (result)
         {
             Fill();
+            ++Version;
         }
 
         _insertRemoveStack.Clear();
@@ -116,14 +172,18 @@ public sealed class HashedBitOctree
         return result;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private bool InsertCore(ulong lcNode, byte log, Vector3di targetPos)
     {
         while (true)
         {
+            Debug.Assert(log > 0);
+
             var node = _nodes[lcNode];
 
             if (node.IsFilled)
             {
+                // Node is filled, so we can't insert anything.
                 return false;
             }
 
@@ -140,6 +200,7 @@ public sealed class HashedBitOctree
             {
                 if (node.HasChild(octant))
                 {
+                    // Already set, so we can't insert here.
                     return false;
                 }
 
@@ -156,14 +217,15 @@ public sealed class HashedBitOctree
             {
                 node.ActivateChild(octant);
                 _nodes[lcNode] = node;
-                _nodes.Add(lcChild, new HashedBitOctreeNode());
+                AddNode(lcChild, new HashedBitOctreeNode());
             }
-
+            
             lcNode = lcChild;
             --log;
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private void Fill()
     {
         while (_insertRemoveStack.TryPop(out var frame))
@@ -175,19 +237,25 @@ public sealed class HashedBitOctree
 
             if (node.ChildMask != byte.MaxValue)
             {
-                break;
+                return;
             }
 
             if (frame.Log > 1)
             {
                 for (byte i = 0; i < 8; i++)
                 {
-                    Debug.Assert(node.HasChild(i));
-#if DEBUG
-                    Debug.Assert(_nodes.Remove(ChildCode(lcNode, i)));
-#else
-                    _nodes.Remove(ChildCode(lcNode, i));
-#endif
+                    var child = _nodes[ChildCode(lcNode, i)];
+
+                    if (!child.IsFilled)
+                    {
+                        // Can't solidify the parent node, which also means we can't solidify further up.
+                        return;
+                    }
+                }
+
+                for (byte i = 0; i < 8; i++)
+                {
+                    RemoveNode(ChildCode(lcNode, i));
                 }
             }
 
@@ -214,6 +282,7 @@ public sealed class HashedBitOctree
         if (result)
         {
             Trim();
+            ++Version;
         }
 
         _insertRemoveStack.Clear();
@@ -221,6 +290,7 @@ public sealed class HashedBitOctree
         return result;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private bool RemoveCore(ulong lcNode, byte log, Vector3di targetPos)
     {
         while (true)
@@ -272,6 +342,7 @@ public sealed class HashedBitOctree
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private void Trim()
     {
         while (_insertRemoveStack.TryPop(out var frame) && _insertRemoveStack.Count > 0)
@@ -382,10 +453,213 @@ public sealed class HashedBitOctree
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ClosestLeaf(
+        HashedBitOctreeNode node,
+        byte bit,
+        Vector3di nodePosWorld,
+        byte log,
+        Vector3 targetPosWorld,
+        out Vector3di bestPos)
+    {
+        var bestCost = float.MaxValue;
+        bestPos = default;
+
+        for (byte i = 0; i < 8; i++)
+        {
+            if (node.ChildBit(i) != bit)
+            {
+                continue;
+            }
+
+            var childPos = nodePosWorld + ChildOffset(i, log);
+
+            var cost = Vector3.DistanceSquared(
+                new Vector3(childPos.X + 0.5f, childPos.Y + 0.5f, childPos.Z + 0.5f),
+                targetPosWorld
+            );
+
+            if (cost < bestCost)
+            {
+                bestCost = cost;
+                bestPos = childPos;
+            }
+        }
+
+        Debug.Assert(!bestCost.Equals(float.MaxValue));
+    }
+
+    public HashedOctreeNodeInfo? GetClosestVoxel(Vector3di tile)
+    {
+        _nodeQueryQueue.Enqueue(new NodeInfo
+        {
+            Lc = RootCode,
+            Log = Log,
+            Node = _nodes[RootCode],
+            Position = Vector3di.Zero
+        }, 0);
+
+        var result = GetClosestVoxelCore(tile);
+
+        _nodeQueryQueue.Clear();
+
+        return result;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    private HashedOctreeNodeInfo? GetClosestVoxelCore(Vector3di targetTileWorld)
+    {
+        var targetPosWorld = new Vector3(targetTileWorld.X + 0.5f, targetTileWorld.Y + 0.5f, targetTileWorld.Z + 0.5f);
+
+        while (_nodeQueryQueue.TryDequeue(out var info, out _))
+        {
+            var node = info.Node;
+            var nodePosWorld = info.Position;
+            var log = info.Log;
+
+            if (node.IsFilled)
+            {
+                return new HashedOctreeNodeInfo(info.Lc, node, new OctreeNodeBounds(nodePosWorld, log));
+            }
+
+            if (!node.HasChildren)
+            {
+                continue;
+            }
+
+            if (log == 1)
+            {
+                ClosestLeaf(node, 1, nodePosWorld, log, targetPosWorld, out var bestPos);
+
+                return new HashedOctreeNodeInfo(
+                    null, 
+                    new HashedBitOctreeNode { IsFilled = true }, 
+                    new OctreeNodeBounds(bestPos, 0)
+                );
+            }
+
+            var childLog = (byte)(log - 1);
+
+            for (byte i = 0; i < 8; i++)
+            {
+                if (!node.HasChild(i))
+                {
+                    continue;
+                }
+
+                var childPos = nodePosWorld + ChildOffset(i, log);
+                var childBox = new BoundingBox3di(childPos, childPos + new Vector3di(1 << (log - 1)));
+                var lc = ChildCode(info.Lc!.Value, i);
+
+                _nodeQueryQueue.Enqueue(new NodeInfo
+                {
+                    Lc = lc,
+                    Node = _nodes[lc],
+                    Log = childLog,
+                    Position = childPos
+                }, childBox.DistanceToSqr(targetPosWorld));
+            }
+        }
+
+        return null;
+    }
+
+    public OctreeNodeBounds? GetClosestEmptyRegion(Vector3di tile)
+    {
+        _regionQueryQueue.Enqueue(new RegionInfo
+        {
+            NodeData = new KeyValuePair<ulong, HashedBitOctreeNode>(RootCode, _nodes[RootCode]),
+            Position = Vector3di.Zero,
+            Log = Log,
+        }, 0);
+
+        var result = GetClosestEmptyRegionCore(tile);
+
+        _regionQueryQueue.Clear();
+
+        return result;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    private OctreeNodeBounds? GetClosestEmptyRegionCore(Vector3di targetTileWorld)
+    {
+        var targetPosWorld = new Vector3(targetTileWorld.X + 0.5f, targetTileWorld.Y + 0.5f, targetTileWorld.Z + 0.5f);
+
+        while (_regionQueryQueue.TryDequeue(out var info, out _))
+        {
+            if (!info.NodeData.HasValue)
+            {
+                return new OctreeNodeBounds(info.Position, info.Log);
+            }
+
+            var nodeData = info.NodeData.Value;
+            var node = nodeData.Value;
+
+            if (node.IsFilled)
+            {
+                continue;
+            }
+
+            var nodePosWorld = info.Position;
+            var log = info.Log;
+
+            if (log == 1)
+            {
+                ClosestLeaf(node, 0, nodePosWorld, log, targetPosWorld, out var bestPos);
+
+                return new OctreeNodeBounds(bestPos, 0);
+            }
+
+            var lcNode = nodeData.Key;
+            var childLog = (byte)(log - 1);
+
+            for (byte i = 0; i < 8; i++)
+            {
+                KeyValuePair<ulong, HashedBitOctreeNode>? childNodeData;
+
+                if (node.HasChild(i))
+                {
+                    var lc = ChildCode(lcNode, i);
+                    childNodeData = new KeyValuePair<ulong, HashedBitOctreeNode>(lc, _nodes[lc]);
+                }
+                else
+                {
+                    childNodeData = null;
+                }
+
+                var childPos = nodePosWorld + ChildOffset(i, log);
+                var childBox = new BoundingBox3di(childPos, childPos + new Vector3di(1 << (log - 1)));
+
+                _regionQueryQueue.Enqueue(new RegionInfo
+                {
+                    NodeData = childNodeData,
+                    Position = childPos,
+                    Log = childLog
+                }, childBox.DistanceToSqr(targetPosWorld));
+            }
+        }
+
+        return null;
+    }
+
     #endregion
 
+    public void Clear(bool fill = false)
+    {
+        _nodes.Clear();
+        _nodes.Add(RootCode, new HashedBitOctreeNode { IsFilled = fill });
+        ++Version;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong ChildCode(ulong lc, byte child) => (lc << 3) | child;
+    private static ulong ChildCode(ulong lc, byte child)
+    {
+        Debug.Assert(lc != 0);
+        Debug.Assert(BitOperations.LeadingZeroCount(lc) >= 3);
+        Debug.Assert(child < 8);
+
+        return (lc << 3) | child;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static byte DescendOctant(ref Vector3di position, byte parentLog)
@@ -401,9 +675,9 @@ public sealed class HashedBitOctree
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector3di ChildOffset(byte child, byte log)
+    private static Vector3di ChildOffset(byte child, byte parentLog)
     {
-        var k = (1 << (log - 1));
+        var k = (1 << (parentLog - 1));
        
         return new Vector3di(
             (child & 1) * k, 
@@ -424,5 +698,20 @@ public sealed class HashedBitOctree
         public required ulong? Lc { get; init; }
         public required Vector3di Position { get; init; }
         public required byte Log { get; init; }
+    }
+
+    private readonly struct NodeInfo
+    {
+        public ulong? Lc { get; init; }
+        public HashedBitOctreeNode Node { get; init; }
+        public Vector3di Position { get; init; }
+        public byte Log { get; init; }
+    }
+
+    private readonly struct RegionInfo
+    {
+        public KeyValuePair<ulong, HashedBitOctreeNode>?  NodeData { get; init; }
+        public Vector3di Position { get; init; }
+        public byte Log { get; init; }
     }
 }
