@@ -3,6 +3,7 @@ using Common;
 using GameFramework.Extensions;
 using GameFramework.ImGui;
 using GameFramework.Renderer.Batch;
+using GameFramework.Utilities;
 using GameFramework.Utilities.Extensions;
 using ImGuiNET;
 using Veldrid;
@@ -127,6 +128,58 @@ internal sealed class WorldLayer : VisualizationLayer3d
                 if (ImGui.Button("Randomize"))
                 {
                     RandomGeneration();
+                }
+
+                if (ImGui.Button("Test range"))
+                {
+                    var min = new Vector3di(
+                        Random.Shared.Next(0, _octree.EdgeSize - 1),
+                        Random.Shared.Next(0, _octree.EdgeSize - 1),
+                        Random.Shared.Next(0, _octree.EdgeSize - 1)
+                    );
+
+                    var max = new Vector3di(
+                        Random.Shared.Next(min.X + 1, _octree.EdgeSize),
+                        Random.Shared.Next(min.Y + 1, _octree.EdgeSize),
+                        Random.Shared.Next(min.Z + 1, _octree.EdgeSize)
+                    );
+
+                    Console.WriteLine($"Range: {min} - {max}");
+
+                    var a = new Grid<bool>(max - min);
+                    var b = new Grid<bool>(max - min);
+
+                    var rangeTime = Measurements.MeasureSecondsD(() =>
+                    {
+                        _octree.ReadRange(min, a);
+                    });
+
+                    var results = 0;
+
+                    var naiveTime = Measurements.MeasureSecondsD(() =>
+                    {
+                        for (var z = 0; z < b.Size.Z; z++)
+                        {
+                            for (var y = 0; y < b.Size.Y; y++)
+                            {
+                                for (var x = 0; x < b.Size.X; x++)
+                                {
+                                    var res = _octree.Contains(new Vector3di(x, y, z) + min);
+                                
+                                    b[x, y, z] = res;
+
+                                    if (res)
+                                    {
+                                        ++results;
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    Assert.IsTrue(a.Storage.SequenceEqual(b.Storage), "Test failed");
+                    Console.WriteLine($"{results} hits");
+                    Console.WriteLine($"Range: {rangeTime * 1000:F3}ms, Naive: {naiveTime * 1000:F3}ms");
                 }
             }
         }

@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Vortice.Mathematics;
 
 namespace Common;
 
@@ -293,19 +294,58 @@ public readonly struct BoundingBox3di
         Max = max;
     }
 
+    public BoundingBox3di(int minX, int minY, int minZ, int maxX, int maxY, int maxZ)
+    {
+        Min = new Vector3di(minX, minY, minZ);
+        Max = new Vector3di(maxX, maxY, maxZ);
+    }
+
+    public bool IsValid => Min.X <= Max.X && Min.Y <= Max.Y && Min.Z <= Max.Z;
+
+    public int Volume => (Max.X - Min.X) * (Max.Y - Min.Y) * (Max.Z - Min.Z);
+
     public bool Contains(Vector3di point) =>
         point.X >= Min.X && point.X <= Max.X &&
         point.Y >= Min.Y && point.Y <= Max.Y &&
         point.Z >= Min.Z && point.Z <= Max.Z;
+
+    public bool Contains(int x, int y, int z) =>
+        x >= Min.X && x <= Max.X &&
+        y >= Min.Y && y <= Max.Y &&
+        z >= Min.Z && z <= Max.Z;
 
     public bool Contains(Vector3 point) =>
         point.X >= Min.X && point.X <= Max.X &&
         point.Y >= Min.Y && point.Y <= Max.Y &&
         point.Z >= Min.Z && point.Z <= Max.Z;
 
+    public bool ContainsExclusive(Vector3di point) =>
+        point.X >= Min.X && point.X < Max.X &&
+        point.Y >= Min.Y && point.Y < Max.Y &&
+        point.Z >= Min.Z && point.Z < Max.Z;
+
+    public bool ContainsExclusive(int x, int y, int z) =>
+        x >= Min.X && x < Max.X &&
+        y >= Min.Y && y < Max.Y &&
+        z >= Min.Z && z < Max.Z;
+
+    public bool Intersects(BoundingBox3di box) => 
+        Max.X >= box.Min.X && Min.X <= box.Max.X && 
+        Max.Y >= box.Min.Y && Min.Y <= box.Max.Y && 
+        Max.Z >= box.Min.Z && Min.Z <= box.Max.Z;
+
     public int DistanceToSqr(Vector3di point) => Contains(point) ? 0 : Vector3di.DistanceSqr(point, Vector3di.Clamp(point, Min, Max));
     public float DistanceToSqr(Vector3 point) => Contains(point) ? 0 : Vector3.DistanceSquared(point, Vector3.Clamp(point, Min, Max));
 
     public double DistanceTo(Vector3di point) => Math.Sqrt(DistanceToSqr(point));
     public float DistanceFTo(Vector3di point) => MathF.Sqrt(DistanceToSqr(point));
+
+    public static BoundingBox3di Intersect(BoundingBox3di a, BoundingBox3di b) => new(
+        Math.Max(a.Min.X, b.Min.X),
+        Math.Max(a.Min.Y, b.Min.Y),
+        Math.Max(a.Min.Z, b.Min.Z),
+        Math.Min(a.Max.X, b.Max.X),
+        Math.Min(a.Max.Y, b.Max.Y),
+        Math.Min(a.Max.Z, b.Max.Z)    
+    );
 }

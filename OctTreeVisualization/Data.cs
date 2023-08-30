@@ -381,31 +381,129 @@ public sealed class HashedBitOctree
         while (_traverseStack.Count > 0)
         {
             var frame = _traverseStack.Pop();
-            
-            var node = frame.Lc.HasValue
-                ? _nodes[frame.Lc.Value] 
-                : new HashedBitOctreeNode { IsFilled = true };
+
+            var lcNode = frame.Lc;
+            var node = _nodes[lcNode];
 
             if (!traverse(node, frame.Position, frame.Log))
             {
-                break;
+                goto end;
             }
 
-            if (frame.Log == 0)
+            if (frame.Log == 1)
             {
-                continue;
-            }
-
-            for (byte i = 0; i < 8; i++)
-            {
-                if (node.HasChild(i))
+                for (byte i = 0; i < 8; i++)
                 {
-                    _traverseStack.Push(new TraverseFrame
+                    if (node.HasChild(i))
                     {
-                        Lc = frame.Log == 1 ? null : ChildCode(frame.Lc!.Value, i),
-                        Position = frame.Position + ChildOffset(i, frame.Log),
-                        Log = (byte)(frame.Log - 1)
-                    });
+                        if (!traverse(new HashedBitOctreeNode { IsFilled = true }, frame.Position + ChildOffset(i, frame.Log), 0))
+                        {
+                            goto end;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                for (byte i = 0; i < 8; i++)
+                {
+                    if (node.HasChild(i))
+                    {
+                        _traverseStack.Push(new TraverseFrame
+                        {
+                            Lc = ChildCode(lcNode, i),
+                            Position = frame.Position + ChildOffset(i, frame.Log),
+                            Log = (byte)(frame.Log - 1)
+                        });
+                    }
+                }
+            }
+
+           
+        }
+
+        end:
+
+        _traverseStack.Clear();
+    }
+
+    // Assumes target is false by default
+    public void ReadRange(Vector3di min, IGrid3d<bool> results)
+    {
+        _traverseStack.Push(new TraverseFrame
+        {
+            Lc = RootCode,
+            Position = Vector3di.Zero,
+            Log = Log
+        });
+
+        var targetBounds = new BoundingBox3di(min, min + results.Size);
+
+        while (_traverseStack.TryPop(out var frame))
+        {
+            var node = _nodes[frame.Lc];
+            var position = frame.Position;
+            var log = frame.Log;
+
+            if (node.IsFilled)
+            {
+                var size = 1 << log;
+                
+                var intersection = BoundingBox3di.Intersect(
+                    new BoundingBox3di(position, position + size), 
+                    targetBounds
+                );
+
+                Debug.Assert(intersection.IsValid);
+
+                for (var z = intersection.Min.Z; z < intersection.Max.Z; z++)
+                {
+                    for (var y = intersection.Min.Y; y < intersection.Max.Y; y++)
+                    {
+                        for (var x = intersection.Min.X; x < intersection.Max.X; x++)
+                        {
+                            Debug.Assert(targetBounds.ContainsExclusive(new Vector3di(x, y, z)));
+                            results[x - min.X, y - min.Y, z - min.Z] = true;
+                        }
+                    }
+                }
+            }
+            else if (log == 1)
+            {
+                for (byte i = 0; i < 8; i++)
+                {
+                    var childPos = position + ChildOffset(i, log);
+
+                    if (targetBounds.ContainsExclusive(childPos) && node.HasChild(i))
+                    {
+                        results[childPos - min] = true;
+                    }
+                }
+            }
+            else
+            {
+                var childLog = (byte)(log - 1);
+                var childSize = 1 << childLog;
+
+                for (byte i = 0; i < 8; i++)
+                {
+                    if (!node.HasChild(i))
+                    {
+                        continue;
+                    }
+
+                    var childPos = position + ChildOffset(i, log);
+                    var childBounds = new BoundingBox3di(childPos, childPos + childSize);
+                  
+                    if (childBounds.Intersects(targetBounds))
+                    {
+                        _traverseStack.Push(new TraverseFrame
+                        {
+                            Lc = ChildCode(frame.Lc, i),
+                            Position = childPos,
+                            Log = childLog
+                        });
+                    }
                 }
             }
         }
@@ -445,7 +543,7 @@ public sealed class HashedBitOctree
 
             if (log == 1)
             {
-                return node.HasChild(octant);
+                return true;
             }
 
             lcNode = ChildCode(lcNode, octant);
@@ -695,7 +793,7 @@ public sealed class HashedBitOctree
 
     private readonly struct TraverseFrame
     {
-        public required ulong? Lc { get; init; }
+        public required ulong Lc { get; init; }
         public required Vector3di Position { get; init; }
         public required byte Log { get; init; }
     }
@@ -714,4 +812,156 @@ public sealed class HashedBitOctree
         public Vector3di Position { get; init; }
         public byte Log { get; init; }
     }
+}
+
+public struct SubGridKey
+{
+    public int X { get; }
+    public int Y { get; }
+    public int Z { get; }
+
+    public SubGridKey(int x, int y, int z)
+    {
+        X = x;
+        Y = y;
+        Z = z;
+    }
+    public Vector3di ToTile(int edgeSize) => new(X * edgeSize, Y * edgeSize, Z * edgeSize);
+
+    private static int MapAxis(int tileCoordinate, int size) => (int)Math.Floor(tileCoordinate / (double)size);
+
+    public static SubGridKey FromTile(int tileX, int tileY, int tileZ, int edgeSize)
+    {
+        return new SubGridKey(MapAxis(tileX, edgeSize), MapAxis(tileY, edgeSize), MapAxis(tileZ, edgeSize));
+    }
+
+    public bool Equals(SubGridKey other)
+    {
+        return X == other.X && Y == other.Y && Z == other.Z;
+    }
+
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(null, obj)) return false;
+        return obj is SubGridKey && Equals((SubGridKey)obj);
+    }
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = X;
+            hashCode = (hashCode * 397) ^ Y;
+            hashCode = (hashCode * 397) ^ Z;
+            return hashCode;
+        }
+    }
+
+    public override string ToString()
+    {
+        return $"{nameof(X)}: {X}, {nameof(Y)}: {Y}, {nameof(Z)}: {Z}";
+    }
+
+    public static bool operator ==(SubGridKey a, SubGridKey b) => a.Equals(b);
+    public static bool operator !=(SubGridKey a, SubGridKey b) => !a.Equals(b);
+}
+
+public interface IGrid3d<T>
+{
+    Vector3di Size { get; }
+
+    T this[int x, int y, int z] { get; set; }
+    T this[Vector3di tile] { get; set; }
+}
+
+public sealed class Grid<T> : IGrid3d<T>
+{
+    public Vector3di Size { get; }
+
+    public T[] Storage { get; }
+
+    public Grid(Vector3di size)
+    {
+        if (size.X * size.Y * size.Z == 0)
+        {
+            throw new ArgumentException("Grid volume is 0", nameof(size));
+        }
+
+        Size = size;
+        Storage = new T[size.X * size.Y * size.Z];
+    }
+
+    public int Count => Storage.Length;
+
+    public int GridIndex(int x, int y, int z) => x + y * Size.X + z * Size.X * Size.Y;
+
+    public T this[int tileX, int tileY, int tileZ]
+    {
+        get => Storage[GridIndex(tileX, tileY, tileZ)];
+        set => Storage[GridIndex(tileX, tileY, tileZ)] = value;
+    }
+
+    public T this[Vector3di tile]
+    {
+        get => Storage[GridIndex(tile.X, tile.Y, tile.Z)];
+        set => Storage[GridIndex(tile.X, tile.Y, tile.Z)] = value;
+    }
+}
+
+public sealed class SubGrid<T> : IGrid3d<T>
+{
+    public SubGridKey Key { get; }
+    public int Log { get; }
+    public int EdgeSize { get; }
+    public T[] Storage { get; }
+    public int TileX => Key.X * EdgeSize;
+    public int TileY => Key.Y * EdgeSize;
+    public int TileZ => Key.Z * EdgeSize;
+    public int TileRight => TileX + EdgeSize;
+    public int TileTop => TileY + EdgeSize;
+    public int TileFront => TileZ + EdgeSize;
+
+    public SubGrid(SubGridKey key, int log)
+    {
+        Key = key;
+        Log = log;
+        EdgeSize = 1 << Log;
+        Storage = new T[EdgeSize * EdgeSize * EdgeSize];
+    }
+
+    public int Count => Storage.Length;
+    public Vector3di TileMin => new(TileX, TileY, TileZ);
+    public Vector3di TileMax => new(TileRight, TileTop, TileFront);
+    public Vector3 WorldCenter => new(TileX + EdgeSize / 2f, TileY + EdgeSize / 2f, TileZ + EdgeSize / 2f);
+    public BoundingBox3di Bounds => new(TileMin, TileMax);
+
+    public int ReduceLocal(int world) => Mathx.ReduceLocal(world, Log);
+
+    public int GridIndex(int xWorld, int yWorld, int zWorld)
+    {
+        var xGrid = ReduceLocal(xWorld);
+        var yGrid = ReduceLocal(yWorld);
+        var zGrid = ReduceLocal(zWorld);
+        var edgeSize = EdgeSize;
+        return xGrid + edgeSize * (yGrid + edgeSize * zGrid);
+    }
+
+    public T this[int tileX, int tileY, int tileZ]
+    {
+        get => Storage[GridIndex(tileX, tileY, tileZ)];
+        set => Storage[GridIndex(tileX, tileY, tileZ)] = value;
+    }
+
+    public Vector3di Size => new Vector3di(EdgeSize);
+
+    public T this[Vector3di tile]
+    {
+        get => Storage[GridIndex(tile.X, tile.Y, tile.Z)];
+        set => Storage[GridIndex(tile.X, tile.Y, tile.Z)] = value;
+    }
+    public Vector3di WorldPosition(int gridIndex) => new(
+        gridIndex % EdgeSize + TileX,
+        (gridIndex / EdgeSize) % EdgeSize + TileY,
+        gridIndex / EdgeSize / EdgeSize + TileZ
+    );
 }
