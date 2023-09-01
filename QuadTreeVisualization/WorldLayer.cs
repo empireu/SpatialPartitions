@@ -21,7 +21,7 @@ internal class WorldLayer : VisualizationLayer2d
         B
     }
 
-    public WorldLayer(GameApplication app, ImGuiLayer imGui) : base(app, imGui) { }
+    public WorldLayer(VisualizationApp app, ImGuiLayer imGui) : base(app, imGui) { }
 
     private HashedQuadTree<Material>? _tree;
 

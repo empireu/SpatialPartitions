@@ -153,6 +153,8 @@ public readonly struct Vector2ds : IComparable<Vector2ds>
     public static bool operator ==(Vector2ds a, Vector2ds b) => a.Equals(b);
     public static bool operator !=(Vector2ds a, Vector2ds b) => !a.Equals(b);
 
+    public static implicit operator Vector2(Vector2ds v) => new(v.X, v.Y);
+
     public static int DistanceSqr(Vector2ds a, Vector2ds b) => (a - b).NormSqr;
     public static double Distance(Vector2ds a, Vector2ds b) => (a - b).Norm;
     public static float DistanceF(Vector2ds a, Vector2ds b) => (a - b).NormF;

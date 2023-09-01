@@ -3,11 +3,19 @@ using System.Runtime.CompilerServices;
 
 namespace Common;
 
-public interface IGrid2d<T>
+public interface IReadOnlyGrid2d<out T>
 {
     Vector2ds Size { get; }
-    T this[int x, int y] { get; set; }
-    T this[Vector2ds tile] { get; set; }
+    T this[int x, int y] { get; }
+    T this[Vector2ds tile] { get; }
+    bool IsWithinBounds(int x, int y);
+    bool IsWithinBounds(Vector2ds tile);
+}
+
+public interface IGrid2d<T> : IReadOnlyGrid2d<T>
+{
+    new T this[int x, int y] { set; }
+    new T this[Vector2ds tile] { set; }
 }
 
 public sealed class Grid2d<T> : IGrid2d<T>
@@ -27,23 +35,29 @@ public sealed class Grid2d<T> : IGrid2d<T>
         Storage = new T[size.X * size.Y];
     }
 
-    public int Count => Storage.Length;
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GridIndex(int x, int y) => x + y * Size.X;
 
-    T IGrid2d<T>.this[int tileX, int tileY]
+    T IReadOnlyGrid2d<T>.this[int tileX, int tileY]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => Storage[GridIndex(tileX, tileY)];
+    }
+
+    T IReadOnlyGrid2d<T>.this[Vector2ds tile]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => Storage[GridIndex(tile.X, tile.Y)];
+    }
+
+    T IGrid2d<T>.this[int tileX, int tileY]
+    {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         set => Storage[GridIndex(tileX, tileY)] = value;
     }
 
     T IGrid2d<T>.this[Vector2ds tile]
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => Storage[GridIndex(tile.X, tile.Y)];
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         set => Storage[GridIndex(tile.X, tile.Y)] = value;
     }
@@ -59,6 +73,9 @@ public sealed class Grid2d<T> : IGrid2d<T>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => ref Storage[GridIndex(tile.X, tile.Y)];
     }
+
+    public bool IsWithinBounds(int x, int y) => x >= 0 && x < Size.X && y >= 0 && y < Size.Y;
+    public bool IsWithinBounds(Vector2ds tile) => tile.X >= 0 && tile.X < Size.X && tile.Y >= 0 && tile.Y < Size.Y;
 }
 
 public interface IGrid3d<T>
