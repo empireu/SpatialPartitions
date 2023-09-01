@@ -23,7 +23,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuadTreeVisualization", "Qu
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Benchmarks", "Benchmarks\Benchmarks.csproj", "{E41666EB-A5EE-4763-9D30-E77DE37F15B4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OctTreeVisualization", "OctTreeVisualization\OctTreeVisualization.csproj", "{8453644A-AA50-43CF-B227-E2232156ADBB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OctTreeVisualization", "OctTreeVisualization\OctTreeVisualization.csproj", "{8453644A-AA50-43CF-B227-E2232156ADBB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExplorationVisualization", "ExplorationVisualization\ExplorationVisualization.csproj", "{81125E61-8A92-4E6D-A381-9597A9BBABDF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -105,6 +107,14 @@ Global
 		{8453644A-AA50-43CF-B227-E2232156ADBB}.Release|Any CPU.Build.0 = Release|Any CPU
 		{8453644A-AA50-43CF-B227-E2232156ADBB}.Release|x64.ActiveCfg = Release|Any CPU
 		{8453644A-AA50-43CF-B227-E2232156ADBB}.Release|x64.Build.0 = Release|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Debug|x64.Build.0 = Debug|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Release|x64.ActiveCfg = Release|Any CPU
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -118,6 +128,7 @@ Global
 		{4599B32E-DB1A-4592-BEEA-C3ABDEDD629F} = {59BEEDDE-1FFF-4100-97F9-1CCF1DF55501}
 		{E41666EB-A5EE-4763-9D30-E77DE37F15B4} = {59BEEDDE-1FFF-4100-97F9-1CCF1DF55501}
 		{8453644A-AA50-43CF-B227-E2232156ADBB} = {59BEEDDE-1FFF-4100-97F9-1CCF1DF55501}
+		{81125E61-8A92-4E6D-A381-9597A9BBABDF} = {59BEEDDE-1FFF-4100-97F9-1CCF1DF55501}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {EAB7D8FF-59C8-4ED4-9072-36C1AC66C452}

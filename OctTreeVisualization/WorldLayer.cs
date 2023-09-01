@@ -146,8 +146,8 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
                     Console.WriteLine($"Range: {min} - {max}");
 
-                    var a = new Grid<bool>(max - min);
-                    var b = new Grid<bool>(max - min);
+                    var a = new Grid3d<bool>(max - min);
+                    var b = new Grid3d<bool>(max - min);
 
                     var rangeTime = Measurements.MeasureSecondsD(() =>
                     {

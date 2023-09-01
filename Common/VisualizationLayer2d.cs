@@ -13,10 +13,10 @@ namespace Common;
 
 public abstract class VisualizationLayer2d : Layer, IDisposable
 {
-    private const float MinZoom = 1.0f;
-    private const float MaxZoom = 250f;
-    private const float CamDragSpeed = 5f;
-    private const float CamZoomSpeed = 50f;
+    protected virtual float MinZoom => 1f;
+    protected virtual float MaxZoom => 250f;
+    protected virtual float CamDragSpeed => 5f;
+    protected virtual float CamZoomSpeed => 50f;
 
     protected readonly GameApplication App;
     private readonly ImGuiLayer _imGui;

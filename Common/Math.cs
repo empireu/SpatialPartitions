@@ -28,13 +28,14 @@ public static class Mathx
         }
     }
 
-
     public static double Lerp(double a, double b, double t) => a + ((b - a) * t);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int ReduceLocal(int world, int log)
     {
         var size = 1 << log;
         var v = world - size * (world >> log);
-        return (v + (v >> 31)) ^ (v >> 31);
+        var bit = (v >> 31);
+        return v + bit ^ bit;
     }
 }
