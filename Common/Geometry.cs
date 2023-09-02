@@ -2,15 +2,27 @@
 
 namespace Common;
 
-public enum Direction2d : byte
+public enum Base4Direction2d : byte
 {
-    U = 0,
-    D = 1,
-    L = 2,
-    R = 3
+    U,
+    L,
+    D,
+    R
 }
 
-public enum Direction3d : byte
+public enum Base8Direction2d : byte
+{
+    U,
+    LU,
+    L,
+    LD,
+    D,
+    RD,
+    R,
+    RU
+}
+
+public enum Base6Direction3d : byte
 {
     L,
     R,
@@ -21,7 +33,7 @@ public enum Direction3d : byte
 }
 
 [Flags]
-public enum Direction3dMask : byte
+public enum Base6Direction3dMask : byte
 {
     None = 0,
     L = 1 << 0,
@@ -107,7 +119,8 @@ public readonly struct Vector2ds : IComparable<Vector2ds>
     public double Norm => Math.Sqrt(NormSqr);
     public float NormF => MathF.Sqrt(NormSqr);
 
-    private static readonly Direction2d[] Directions = Enum.GetValues<Direction2d>();
+    private static readonly Base4Direction2d[] Directions4 = Enum.GetValues<Base4Direction2d>();
+    private static readonly Base8Direction2d[] Directions8 = Enum.GetValues<Base8Direction2d>();
 
     public Vector2ds(short x, short y)
     {
@@ -129,7 +142,7 @@ public readonly struct Vector2ds : IComparable<Vector2ds>
 
     public override int GetHashCode() => HashCode.Combine(X, Y);
 
-    public Direction2d DirectionTo(Vector2ds b)
+    public Base4Direction2d Base4DirectionTo(Vector2ds b)
     {
         if (this == b)
         {
@@ -138,13 +151,27 @@ public readonly struct Vector2ds : IComparable<Vector2ds>
 
         var a = this;
 
-        return Directions.MinBy(n => DistanceSqr(a + n, b));
+        return Directions4.MinBy(n => DistanceSqr(a + n, b));
+    }
+
+    public Base8Direction2d Base8DirectionTo(Vector2ds b)
+    {
+        if (this == b)
+        {
+            throw new ArgumentException("Cannot get direction to same point", nameof(b));
+        }
+
+        var a = this;
+
+        return Directions8.MinBy(n => DistanceSqr(a + n, b));
     }
 
     public static Vector2ds operator +(Vector2ds a, Vector2ds b) => new(a.X + b.X, a.Y + b.Y);
-    public static Vector2ds operator +(Vector2ds a, Direction2d d) => a + d.Step();
+    public static Vector2ds operator +(Vector2ds a, Base4Direction2d d) => a + d.Step();
+    public static Vector2ds operator +(Vector2ds a, Base8Direction2d d) => a + d.Step();
     public static Vector2ds operator -(Vector2ds a, Vector2ds b) => new(a.X - b.X, a.Y - b.Y);
-    public static Vector2ds operator -(Vector2ds a, Direction2d d) => a - d.Step();
+    public static Vector2ds operator -(Vector2ds a, Base4Direction2d d) => a - d.Step();
+    public static Vector2ds operator -(Vector2ds a, Base8Direction2d d) => a - d.Step();
     public static Vector2ds operator /(Vector2ds a, Vector2ds b) => new(a.X / b.X, a.Y / b.Y);
     public static Vector2ds operator /(Vector2ds a, int s) => new(a.X / s, a.Y / s);
     public static Vector2ds operator *(Vector2ds a, Vector2ds b) => new(a.X * b.X, a.Y * b.Y);
@@ -154,6 +181,7 @@ public readonly struct Vector2ds : IComparable<Vector2ds>
     public static bool operator !=(Vector2ds a, Vector2ds b) => !a.Equals(b);
 
     public static implicit operator Vector2(Vector2ds v) => new(v.X, v.Y);
+    public static implicit operator Vector2d(Vector2ds v) => new(v.X, v.Y);
 
     public static int DistanceSqr(Vector2ds a, Vector2ds b) => (a - b).NormSqr;
     public static double Distance(Vector2ds a, Vector2ds b) => (a - b).Norm;
@@ -178,6 +206,16 @@ public readonly struct Vector2ds : IComparable<Vector2ds>
 
         return new Vector2d(x, y);
     }
+
+    public static Vector2ds Clamp(Vector2ds v, Vector2ds min, Vector2ds max) => new(
+        Math.Clamp(v.X, min.X, max.X),
+        Math.Clamp(v.Y, min.Y, max.Y)
+    );
+
+    public static Vector2ds Clamp(Vector2ds v, int min, int max) => new(
+        Math.Clamp(v.X, min, max),
+        Math.Clamp(v.Y, min, max)
+    );
 }
 
 public readonly struct Vector3di : IComparable<Vector3di>

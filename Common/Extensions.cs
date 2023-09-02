@@ -21,12 +21,25 @@ public static class Extensions
         return m(t);
     }
 
-    public static Vector2ds Step(this Direction2d dir) => dir switch
+    public static Vector2ds Step(this Base4Direction2d dir) => dir switch
     {
-        Direction2d.L => new Vector2ds(-1, 0),
-        Direction2d.R => new Vector2ds(1, 0),
-        Direction2d.U => new Vector2ds(0, -1),
-        Direction2d.D => new Vector2ds(0, 1),
+        Base4Direction2d.L => new Vector2ds(-1, 0),
+        Base4Direction2d.R => new Vector2ds(1, 0),
+        Base4Direction2d.U => new Vector2ds(0, -1),
+        Base4Direction2d.D => new Vector2ds(0, 1),
+        _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, $"Unexpected direction {dir}")
+    };
+
+    public static Vector2ds Step(this Base8Direction2d dir) => dir switch
+    {
+        Base8Direction2d.L => new Vector2ds(-1, 0),
+        Base8Direction2d.R => new Vector2ds(1, 0),
+        Base8Direction2d.U => new Vector2ds(0, -1),
+        Base8Direction2d.D => new Vector2ds(0, 1),
+        Base8Direction2d.LU => new Vector2ds(-1, -1),
+        Base8Direction2d.RU => new Vector2ds(1, -1),
+        Base8Direction2d.LD => new Vector2ds(-1, 1),
+        Base8Direction2d.RD => new Vector2ds(1, 1),
         _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, $"Unexpected direction {dir}")
     };
 
@@ -84,34 +97,34 @@ public static class Extensions
         QuadColors right,
         QuadColors up,
         QuadColors down, 
-        Direction3dMask mask)
+        Base6Direction3dMask mask)
     {
-        if (mask.HasFlag(Direction3dMask.F))
+        if (mask.HasFlag(Base6Direction3dMask.F))
         {
             batch.Quad(CubeQuadForward * transform, forward);
         }
 
-        if (mask.HasFlag(Direction3dMask.B))
+        if (mask.HasFlag(Base6Direction3dMask.B))
         {
             batch.Quad(CubeQuadBackward * transform, backward);
         }
 
-        if (mask.HasFlag(Direction3dMask.L))
+        if (mask.HasFlag(Base6Direction3dMask.L))
         {
             batch.Quad(CubeQuadLeft * transform, left);
         }
 
-        if (mask.HasFlag(Direction3dMask.R))
+        if (mask.HasFlag(Base6Direction3dMask.R))
         {
             batch.Quad(CubeQuadRight * transform, right);
         }
 
-        if (mask.HasFlag(Direction3dMask.U))
+        if (mask.HasFlag(Base6Direction3dMask.U))
         {
             batch.Quad(CubeQuadUp * transform, up);
         }
 
-        if (mask.HasFlag(Direction3dMask.D))
+        if (mask.HasFlag(Base6Direction3dMask.D))
         {
             batch.Quad(CubeQuadDown * transform, down);
         }
@@ -128,7 +141,7 @@ public static class Extensions
     }
 
 
-    public static void ColoredQuadBox(this QuadBatch batch, Matrix4x4 transform, QuadColors color, Direction3dMask mask)
+    public static void ColoredQuadBox(this QuadBatch batch, Matrix4x4 transform, QuadColors color, Base6Direction3dMask mask)
     {
         ColoredQuadBox(batch, transform, color, color, color, color, color, color, mask);
     }
@@ -148,8 +161,8 @@ public static class Extensions
         var d = Matrix4x4.CreateScale(thickness, thickness, max.Z - min.Z - thickness) *
                 Matrix4x4.CreateTranslation(min with { Z = (min.Z + max.Z) / 2f, X = max.X });
 
-        const Direction3dMask ex = Direction3dMask.F | Direction3dMask.B | Direction3dMask.U | Direction3dMask.D;
-        const Direction3dMask ez = Direction3dMask.L | Direction3dMask.R | Direction3dMask.U | Direction3dMask.D;
+        const Base6Direction3dMask ex = Base6Direction3dMask.F | Base6Direction3dMask.B | Base6Direction3dMask.U | Base6Direction3dMask.D;
+        const Base6Direction3dMask ez = Base6Direction3dMask.L | Base6Direction3dMask.R | Base6Direction3dMask.U | Base6Direction3dMask.D;
 
         // Lower horizontal edges:
         ColoredQuadBox(batch, a, colors, ex);

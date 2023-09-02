@@ -1,4 +1,7 @@
-﻿using System.Numerics;
+﻿using Newtonsoft.Json.Linq;
+using SixLabors.Fonts;
+using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace Common;
@@ -136,13 +139,13 @@ public sealed class Grid3d<T> : IGrid3d<T>
     }
 }
 
-public readonly struct SubGridKey3d
+public readonly struct GridPageKey3d
 {
     public int X { get; }
     public int Y { get; }
     public int Z { get; }
 
-    public SubGridKey3d(int x, int y, int z)
+    public GridPageKey3d(int x, int y, int z)
     {
         X = x;
         Y = y;
@@ -154,32 +157,32 @@ public readonly struct SubGridKey3d
     private static int MapAxis(int tileCoordinate, int size) => (int)Math.Floor(tileCoordinate / (double)size);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SubGridKey3d FromTile(int tileX, int tileY, int tileZ, int edgeSize) => new(
+    public static GridPageKey3d FromTile(int tileX, int tileY, int tileZ, int edgeSize) => new(
         MapAxis(tileX, edgeSize), 
         MapAxis(tileY, edgeSize), 
         MapAxis(tileZ, edgeSize)
     );
 
-    public override bool Equals(object? obj) => obj is SubGridKey3d other && Equals(other);
+    public override bool Equals(object? obj) => obj is GridPageKey3d other && Equals(other);
 
-    public bool Equals(SubGridKey3d other) => X == other.X && Y == other.Y && Z == other.Z;
+    public bool Equals(GridPageKey3d other) => X == other.X && Y == other.Y && Z == other.Z;
 
     public override int GetHashCode() => HashCode.Combine(X, Y, Z);
 
     public override string ToString() => $"{nameof(X)}: {X}, {nameof(Y)}: {Y}, {nameof(Z)}: {Z}";
 
-    public static bool operator ==(SubGridKey3d a, SubGridKey3d b) => a.Equals(b);
+    public static bool operator ==(GridPageKey3d a, GridPageKey3d b) => a.Equals(b);
 
-    public static bool operator !=(SubGridKey3d a, SubGridKey3d b) => !a.Equals(b);
+    public static bool operator !=(GridPageKey3d a, GridPageKey3d b) => !a.Equals(b);
 }
 
 public sealed class GridPage3d<T> : IGrid3d<T>
 {
-    public SubGridKey3d Key3d { get; }
+    public GridPageKey3d Key3d { get; }
     public int Log { get; }
     public T[] Storage { get; }
 
-    public GridPage3d(SubGridKey3d key, int log)
+    public GridPage3d(GridPageKey3d key, int log)
     {
         Key3d = key;
         Log = log;
@@ -233,26 +236,53 @@ public sealed class GridPage3d<T> : IGrid3d<T>
     );
 }
 
-public interface IReadOnlyHashMultiMap<in TKey, TValue>
+public interface IReadOnlyMultiMap<TKey, TValue>
 {
     int Count { get; }
+    IReadOnlyCollection<TKey> Keys { get; }
     IReadOnlySet<TValue> this[TKey k] { get; }
     bool ContainsKey(TKey k);
 }
 
-public class HashMultiMap<TKey, TValue> : IReadOnlyHashMultiMap<TKey, TValue> where TKey : notnull
+public interface IMultiMap<TKey, TValue> : IReadOnlyMultiMap<TKey, TValue>
+{
+    bool Add(TKey k, TValue v);
+    bool Remove(TKey k);
+    bool Remove(TKey k, TValue v);
+    void Clear();
+}
+
+public sealed class HashMultiMap<TKey, TValue> : IMultiMap<TKey, TValue> where TKey : notnull
 {
     public readonly Dictionary<TKey, HashSet<TValue>> Map = new();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private HashSet<TValue> Get(TKey k) => Map.TryGetValue(k, out var e) ? e : new HashSet<TValue>().Also(s => Map.Add(k, s));
+    private HashSet<TValue> Get(TKey k) => 
+        Map.TryGetValue(k, out var set) 
+            ? set 
+            : new HashSet<TValue>().Also(s => Map.Add(k, s));
 
     public int Count => Map.Count;
+
+    public IReadOnlyCollection<TKey> Keys => Map.Keys;
+
     public HashSet<TValue> this[TKey k] => Get(k);
 
-    IReadOnlySet<TValue> IReadOnlyHashMultiMap<TKey, TValue>.this[TKey k] => Get(k);
+    IReadOnlySet<TValue> IReadOnlyMultiMap<TKey, TValue>.this[TKey k] => Get(k);
 
-    public void Add(TKey k, TValue v) => this[k].Add(v);
+    public bool Add(TKey k, TValue v) => this[k].Add(v);
+
+    public HashSet<TValue>? Place(TKey key, HashSet<TValue> set)
+    {
+        if (!Map.Remove(key, out var old))
+        {
+            old = null;
+        }
+
+        Map.Add(key, set);
+
+        return old;
+    }
 
     public bool ContainsKey(TKey k)
     {
@@ -267,22 +297,69 @@ public class HashMultiMap<TKey, TValue> : IReadOnlyHashMultiMap<TKey, TValue> wh
     public bool Remove(TKey k) => Map.Remove(k);
 
     public bool Remove(TKey k, TValue v) => Map.TryGetValue(k, out var set) && set.Remove(v);
+
+    public void Clear()
+    {
+        Map.Clear();
+    }
 }
 
-public class BiMap<TForward, TBackward> where TForward : notnull where TBackward : notnull
+public interface IReadOnlyBiMap<TForward, TBackward>
 {
-    public Dictionary<TForward, TBackward> Forward { get; } = new();
-    public Dictionary<TBackward, TForward> Backward { get; } = new();
+    IReadOnlyDictionary<TForward, TBackward> Forward { get; }
+    IReadOnlyDictionary<TBackward, TForward> Backward { get; }
+    bool ContainsForward(TForward f);
+    bool ContainsBackward(TBackward b);
+}
+
+public interface IBiMap<TForward, TBackward> : IReadOnlyBiMap<TForward, TBackward>
+{
+    void Associate(TForward f, TBackward b);
+    bool Disassociate(TForward f, TBackward b);
+    void Clear();
+}
+
+public class HashBiMap<TForward, TBackward> : IBiMap<TForward, TBackward> where TForward : notnull where TBackward : notnull
+{
+    private readonly Dictionary<TForward, TBackward> _forward = new();
+    private readonly Dictionary<TBackward, TForward> _backward = new();
+
+    public IReadOnlyDictionary<TForward, TBackward> Forward => _forward;
+    public IReadOnlyDictionary<TBackward, TForward> Backward => _backward;
+    
+    public bool ContainsForward(TForward f) => Forward.ContainsKey(f);
+
+    public bool ContainsBackward(TBackward b) => Backward.ContainsKey(b);
 
     public void Associate(TForward f, TBackward b)
     {
-        Forward.Add(f, b);
-        Backward.Add(b, f);
+        _forward.Add(f, b);
+        _backward.Add(b, f);
     }
 
-    public bool ContainsF(TForward f) => Forward.ContainsKey(f);
+    public bool Disassociate(TForward f, TBackward b)
+    {
+        var removedF = _forward.Remove(f, out var actualBackward);
+        var removedB = _backward.Remove(b, out var actualForward);
 
-    public bool ContainsB(TBackward b) => Backward.ContainsKey(b);
+#if DEBUG
+        Debug.Assert(removedF == removedB);
+
+        if (removedF)
+        {
+            Debug.Assert(f.Equals(actualForward));
+            Debug.Assert(b.Equals(actualBackward));
+        }
+#endif
+
+        return removedF;
+    }
+
+    public void Clear()
+    {
+        _forward.Clear();
+        _backward.Clear();
+    }
 }
 
 public sealed class Histogram<TKey> where TKey : notnull
@@ -298,4 +375,34 @@ public sealed class Histogram<TKey> where TKey : notnull
         get => Map.TryGetValue(k, out var v) ? v : 0;
         set => Map[k] = value;
     }
+}
+
+public struct Average
+{
+    public int Count { get; private set; }
+    public double Value { get; private set; }
+
+    public void Add(double sample)
+    {
+        Value += (sample - Value) / (Count + 1);
+        ++Count;
+    }
+}
+
+public struct Average2d
+{
+    public int Count { get; private set; }
+    public double ValueX { get; private set; }
+    public double ValueY { get; private set; }
+  
+    public readonly Vector2d Value => new(ValueX, ValueY);
+
+    public void Add(double x, double y)
+    {
+        ValueX += (x - ValueX) / (Count + 1);
+        ValueY += (y - ValueY) / (Count + 1);
+        ++Count;
+    }
+
+    public void Add(Vector2d value) => Add(value.X, value.Y);
 }
