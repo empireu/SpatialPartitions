@@ -5,6 +5,7 @@ using GameFramework.Extensions;
 using GameFramework.ImGui;
 using GameFramework.Renderer;
 using GameFramework.Renderer.Batch;
+using GameFramework.Utilities;
 using GameFramework.Utilities.Extensions;
 using ImGuiNET;
 using Veldrid;
@@ -13,7 +14,8 @@ namespace ExplorationVisualization;
 
 internal sealed class WorldLayer : VisualizationLayer2d
 {
-    protected override float MinZoom => 0.1f;
+    protected override float MinZoom => 0.01f;
+    protected override float MaxZoom => 1000f;
 
     private Simulation? _simulation;
 
@@ -32,22 +34,35 @@ internal sealed class WorldLayer : VisualizationLayer2d
     private bool _showFrontiers = true;
     private bool _showVisitedTiles = true;
 
+    private readonly QuadBatch _terrainBatch;
+
     public WorldLayer(VisualizationApp app, ImGuiLayer imGui) : base(app, imGui)
     {
-
+        _terrainBatch = GetBatch();
     }
 
     protected override void ImGuiOnSubmit(ImGuiRenderer sender)
     {
         if (ImGui.Begin("Simulation"))
         {
-            _changed |= ImGui.SliderInt("Width", ref _sizeX, 16, 128);
-            _changed |= ImGui.SliderInt("Height", ref _sizeY, 16, 128);
+            _changed |= ImGui.SliderInt("Width", ref _sizeX, 16, 512);
+            _changed |= ImGui.SliderInt("Height", ref _sizeY, 16, 512);
             _changed |= ImGui.SliderInt("Radius", ref _visionRadius, 4, 32);
             _changed |= ImGui.SliderInt("Robot Count", ref _robotCount, 1, 100);
             _changed |= ImGui.InputFloat("Noise Scale", ref _noiseScale);
             _changed |= ImGui.InputFloat("Noise Threshold", ref _noiseThreshold);
             _changed |= ImGuix.StringComboBox(Robot.ImplementationNames, ref _implementationName, "Algorithm");
+
+            Robot.Implementations[_implementationName].Gui?.Also(gui =>
+            {
+                ImGui.Separator();
+                ImGui.Text("Robot Config");
+                ImGui.Indent();
+                gui.Submit();
+                ImGui.Unindent();
+            });
+
+            ImGui.Separator();
 
             ImGui.Text($"Seed: {_seed}");
             ImGui.SameLine();
@@ -68,7 +83,7 @@ internal sealed class WorldLayer : VisualizationLayer2d
                     _seed,
                     _robotCount,
                     _visionRadius,
-                    Robot.Implementations[_implementationName],
+                    Robot.Implementations[_implementationName].Factory,
                     out _simulation // Guaranteed to be null if failed
                 );
 
@@ -76,6 +91,8 @@ internal sealed class WorldLayer : VisualizationLayer2d
                 {
                     CameraController.FuturePosition2 = new Vector2(_sizeX, _sizeY) / 2f;
                     CameraController.FutureZoom = MathF.Sqrt(_sizeX * _sizeY);
+
+                    UpdateTerrainBatch();
                 }
             }
 
@@ -99,8 +116,11 @@ internal sealed class WorldLayer : VisualizationLayer2d
                     ImGui.Checkbox("Show View", ref _showViewRadius);
                     ImGui.Checkbox("Show Frontiers", ref _showFrontiers);
                     ImGui.Checkbox("Show Visited", ref _showVisitedTiles);
+                    
                     ImGui.Separator();
+                    
                     ImGui.Text($"Tick {_simulation.Ticks}");
+
                     if (ImGui.Button("Update") || ImGui.IsKeyReleased(ImGuiKey.Space))
                     {
                         _simulation.Update();
@@ -110,21 +130,20 @@ internal sealed class WorldLayer : VisualizationLayer2d
         }
     }
 
-    private void RenderTerrain(QuadBatch batch)
+    private void UpdateTerrainBatch()
     {
-        if (_simulation == null)
-        {
-            return;
-        }
+        Assert.NotNull(ref _simulation);
+
+        _terrainBatch.Clear();
 
         for (var y = 0; y < _simulation.Map.Size.Y; y++)
         {
             for (var x = 0; x < _simulation.Map.Size.X; x++)
             {
-                batch.Quad(
-                    new Vector2(x, y), 
-                    _simulation.Map[x, y] 
-                        ? new RgbaFloat4(0.8f, 0.5f, 0.5f, 1f) 
+                _terrainBatch.Quad(
+                    new Vector2(x, y),
+                    _simulation.Map[x, y]
+                        ? new RgbaFloat4(0.8f, 0.5f, 0.5f, 1f)
                         : new RgbaFloat4(0.1f, 0.1f, 0.2f, 1f)
                 );
             }
@@ -223,11 +242,14 @@ internal sealed class WorldLayer : VisualizationLayer2d
             return;
         }
 
-        var size = new Vector2(0.5f);
+        var selectedSize = new Vector2(1.1f);
+        var standardSize = new Vector2(0.5f);
 
-        foreach (var robot in _simulation.Robots)
+        for (var index = 0; index < _simulation.Robots.Count; index++)
         {
-            batch.Quad(robot.Position, size, robot.Color);
+            var robot = _simulation.Robots[index];
+
+            batch.Quad(robot.Position, index == _selectedRobot ? selectedSize : standardSize, robot.Color);
         }
     }
 
@@ -238,7 +260,12 @@ internal sealed class WorldLayer : VisualizationLayer2d
             return;
         }
 
-        _simulation.Robots[_selectedRobot].DebugDraw(batch);
+        var mouse = Vector2ds.Clamp(MouseI, Vector2ds.Zero, _simulation.Map.Size - Vector2ds.One);
+
+        foreach (var robot in _simulation.Robots)
+        {
+            robot.DebugDraw(batch, mouse);   
+        }
     }
 
     private void RenderTooltips(QuadBatch batch)
@@ -283,6 +310,8 @@ internal sealed class WorldLayer : VisualizationLayer2d
         robotTooltip.AppendLine($"Evidence: {robot.OccupancyGridView[MouseI]}");
         robotTooltip.AppendLine($"Explored: {robot.ExploreProgress * 100:F2}%");
 
+        robot.AddTooltips(robotTooltip, MouseI);
+
         if (robotTooltip.Length > 0)
         {
             App.Font.Render(
@@ -297,18 +326,19 @@ internal sealed class WorldLayer : VisualizationLayer2d
 
     protected override void RenderStack()
     {
-        RenderPass(RenderTerrain);
+        SetCameraTransform(_terrainBatch);
+        _terrainBatch.Submit();
 
-        RenderPass(RenderVisitedTerrain);
-        RenderPass(RenderRobotVisions);
-        
-        RenderPass(RenderFrontierEdges);
-        RenderPass(RenderFrontierCenters);
-        
-        RenderPass(RenderRobots);
+        RenderPassMain(RenderVisitedTerrain);
+        RenderPassMain(RenderRobotVisions);
 
-        RenderPass(RenderRobotDebugView);
-        
-        RenderPass(RenderTooltips);
+        RenderPassMain(RenderFrontierEdges);
+        RenderPassMain(RenderFrontierCenters);
+
+        RenderPassMain(RenderRobots);
+
+        RenderPassMain(RenderRobotDebugView);
+
+        RenderPassMain(RenderTooltips);
     }
 }

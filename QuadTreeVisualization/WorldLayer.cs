@@ -167,7 +167,7 @@ internal class WorldLayer : VisualizationLayer2d
 
     protected override void RenderStack()
     {
-        RenderPass(RenderNodes);
-        RenderPass(RenderSilkscreen);
+        RenderPassMain(RenderNodes);
+        RenderPassMain(RenderSilkscreen);
     }
 }

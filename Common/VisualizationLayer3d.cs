@@ -17,14 +17,6 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
 
     private readonly List<QuadBatch> _batches = new();
 
-    protected QuadBatch GetBatch()
-    {
-        CheckDisposed();
-        var batch = App.Resources.BatchPool.Get();
-        _batches.Add(batch);
-        return batch;
-    }
-
     public VisualizationLayer3d(VisualizationApp app, ImGuiLayer imGui)
     {
         App = app;
@@ -38,6 +30,14 @@ public abstract class VisualizationLayer3d : Layer, IDisposable
         UpdatePipelinesAndView();
 
         imGui.Submit += ImGuiOnSubmit;
+    }
+
+    protected QuadBatch GetBatch()
+    {
+        CheckDisposed();
+        var batch = App.Resources.BatchPool.Get();
+        _batches.Add(batch);
+        return batch;
     }
 
     protected abstract void ImGuiOnSubmit(ImGuiRenderer sender);

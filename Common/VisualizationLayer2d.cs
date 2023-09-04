@@ -21,35 +21,40 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
     protected readonly VisualizationApp App;
     private readonly ImGuiLayer _imGui;
 
-    public OrthographicCameraController2D CameraController { get; }
 
-    private readonly QuadBatch _batch;
-    private readonly PostProcessor _postProcess;
+    private readonly List<QuadBatch> _batches = new();
+    private readonly QuadBatch _mainBatch;
     private bool _dragCamera;
+    private bool _disposed;
+    private bool _rendering;
+    private bool _userBatchesInitialized;
 
     public VisualizationLayer2d(VisualizationApp app, ImGuiLayer imGui)
     {
         App = app;
+
         _imGui = imGui;
 
-        CameraController = new OrthographicCameraController2D(
-            new OrthographicCamera(0, -1, 1),
-            translationInterpolate: 25f,
-            zoomInterpolate: 10f
-        );
-
-        CameraController.FutureZoom = 35;
-
-        _batch = app.Resources.BatchPool.Get();
-
-        _postProcess = new PostProcessor(app)
+        CameraController = new OrthographicCameraController2D(new OrthographicCamera(0, -1, 1), translationInterpolate: 25f, zoomInterpolate: 10f)
         {
-            BackgroundColor = RgbaFloat.Black
+            FutureZoom = 35
         };
 
-        UpdatePipelines();
+        _mainBatch = GetBatch();
+
+        UpdatePipelinesAndView();
 
         imGui.Submit += ImGuiOnSubmit;
+    }
+
+    public OrthographicCameraController2D CameraController { get; }
+
+    protected QuadBatch GetBatch()
+    {
+        CheckDisposed();
+        var batch = App.Resources.BatchPool.Get();
+        _batches.Add(batch);
+        return batch;
     }
 
     protected Vector2 Mouse => CameraController.Camera.MouseToWorld2D(App.Input.MousePosition, App.Window.Width, App.Window.Height);
@@ -57,28 +62,39 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
 
     protected abstract void ImGuiOnSubmit(ImGuiRenderer sender);
 
-    private bool _rendering;
-    
-    protected void RenderPass(Action<QuadBatch> body)
+    protected void SetCameraTransform(QuadBatch batch)
     {
+        batch.Effects = batch.Effects with { Transform = CameraController.Camera.CameraMatrix };
+    }
+
+    protected void RenderPass(QuadBatch batch, Action<QuadBatch> body)
+    {
+        CheckDisposed();
+
+        SetCameraTransform(batch);
+
+        batch.Clear();
+        body(batch);
+        batch.Submit();
+    }
+
+    protected void RenderPassMain(Action<QuadBatch> body)
+    {
+        CheckDisposed();
+
         if (!_rendering)
         {
             throw new InvalidOperationException();
         }
 
-        _batch.Effects = QuadBatchEffects.Transformed(CameraController.Camera.CameraMatrix);
-        _batch.Clear();
-        body(_batch);
-        _batch.Submit(framebuffer: _postProcess.InputFramebuffer);
+        RenderPass(_mainBatch, body);
     }
 
     protected sealed override void Render(FrameInfo frameInfo)
     {
-        _postProcess.ClearColor();
         _rendering = true;
         RenderStack();
         _rendering = false;
-        _postProcess.Render();
     }
 
     protected abstract void RenderStack();
@@ -86,6 +102,9 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
     protected override void OnAdded()
     {
         RegisterHandler<MouseEvent>(OnMouseEvent);
+
+        UpdateBatchPipelines(App.Device.SwapchainFramebuffer.OutputDescription);
+        _userBatchesInitialized = true;
     }
 
     protected bool OnMouseEvent(MouseEvent @event)
@@ -111,20 +130,35 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
 
     }
 
-    private void UpdatePipelines()
+    private void UpdatePipelinesAndView()
     {
-        CameraController.Camera.AspectRatio = App.Window.Width / (float)App.Window.Height;
+        var outputDesc = App.Device.SwapchainFramebuffer.OutputDescription;
 
-        _postProcess.ResizeInputs(App.Window.Size() * 2);
-        _postProcess.SetOutput(App.Device.SwapchainFramebuffer);
-        _batch.UpdatePipelines(outputDescription: _postProcess.InputFramebuffer.OutputDescription);
+        _mainBatch.UpdatePipelines(outputDescription: outputDesc);
+
+        if (_userBatchesInitialized)
+        {
+            UpdateBatchPipelines(outputDesc);
+        }
+
+        CameraController.Camera.AspectRatio = App.Window.Width / (float)App.Window.Height;
+    }
+
+    protected virtual void UpdateBatchPipelines(OutputDescription outputDesc)
+    {
+
     }
 
     protected override void Resize(Size size)
     {
         base.Resize(size);
+        UpdatePipelinesAndView();
+    }
 
-        UpdatePipelines();
+    protected override void Update(FrameInfo frameInfo)
+    {
+        base.Update(frameInfo);
+        UpdateCamera(frameInfo);
     }
 
     private void UpdateCamera(FrameInfo frameInfo)
@@ -133,7 +167,7 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
         {
             if (_dragCamera)
             {
-                var delta = (App.Input.MouseDelta / new Vector2(App.Window.Width, App.Window.Height)) * new Vector2(-1, 1) * CameraController.Camera.Zoom * CamDragSpeed;
+                var delta = App.Input.MouseDelta / new Vector2(App.Window.Width, App.Window.Height) * new Vector2(-1, 1) * CameraController.Camera.Zoom * CamDragSpeed;
                 CameraController.FuturePosition2 += delta;
             }
 
@@ -144,17 +178,9 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
         CameraController.Update(frameInfo.DeltaTime);
     }
 
-    protected override void Update(FrameInfo frameInfo)
+    private void CheckDisposed()
     {
-        base.Update(frameInfo);
-        UpdateCamera(frameInfo);
-    }
-
-    private bool _disposed;
-
-    protected VisualizationLayer2d(OrthographicCameraController2D cameraController)
-    {
-        CameraController = cameraController;
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     public void Dispose()
@@ -166,6 +192,11 @@ public abstract class VisualizationLayer2d : Layer, IDisposable
 
         _disposed = true;
 
-        App.Resources.BatchPool.Return(_batch);
+        foreach (var quadBatch in _batches)
+        {
+            App.Resources.BatchPool.Return(quadBatch);
+        }
+
+        _batches.Clear();
     }
 }

@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using SixLabors.Fonts;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -36,6 +37,11 @@ public sealed class Grid2d<T> : IGrid2d<T>
 
         Size = size;
         Storage = new T[size.X * size.Y];
+    }
+
+    public Grid2d(int width, int height) : this(new Vector2ds(width, height))
+    {
+
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -79,6 +85,15 @@ public sealed class Grid2d<T> : IGrid2d<T>
 
     public bool IsWithinBounds(int x, int y) => x >= 0 && x < Size.X && y >= 0 && y < Size.Y;
     public bool IsWithinBounds(Vector2ds tile) => tile.X >= 0 && tile.X < Size.X && tile.Y >= 0 && tile.Y < Size.Y;
+
+    public Grid2d<T> Bind()
+    {
+        var result = new Grid2d<T>(Size);
+
+        Array.Copy(Storage, result.Storage, result.Storage.Length);
+
+        return result;
+    }
 }
 
 public interface IGrid3d<T>
@@ -295,6 +310,8 @@ public sealed class HashMultiMap<TKey, TValue> : IMultiMap<TKey, TValue> where T
     }
 
     public bool Remove(TKey k) => Map.Remove(k);
+
+    public bool Remove(TKey k, [NotNullWhen(true)] out HashSet<TValue>? set) => Map.Remove(k, out set);
 
     public bool Remove(TKey k, TValue v) => Map.TryGetValue(k, out var set) && set.Remove(v);
 

@@ -1,127 +1,14 @@
-﻿using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using Common;
-using GameFramework.Extensions;
 using GameFramework.Renderer;
 using GameFramework.Renderer.Batch;
 using GameFramework.Utilities;
 using GameFramework.Utilities.Extensions;
+using ImGuiNET;
 using Simplex;
 
 namespace ExplorationVisualization;
-
-internal sealed class TestRobot : Robot<TestRobot>
-{
-    private LinkedList<Vector2ds>? _lastPath;
-
-    public TestRobot(RobotCreateInfo ci) : base(ci)
-    {
-
-    }
-
-    private static void CommunicateFindings(Dictionary<Vector2ds, bool> view, TestRobot[] peers)
-    {
-        foreach (var robot in peers)
-        {
-            foreach (var (position, status) in view)
-            {
-                robot.OccupancyGrid[position] = status ? Occupancy.Obstacle : Occupancy.Open;
-            }
-        }        
-    }
-
-    private bool TryFollowPath()
-    {
-        if (_lastPath?.Last == null || _lastPath.First == null || Position == _lastPath.Last.Value)
-        {
-            goto skip;
-        }
-
-        if (!IsFrontierCell(_lastPath.Last.Value))
-        {
-            goto skip;
-        }
-
-        Debug.Assert(_lastPath.First.Value == Position);
-
-        _lastPath.RemoveFirst();
-
-        // Check if path is still possible:
-
-        foreach (var position in _lastPath)
-        {
-            if (!IsWalkable(position))
-            {
-                goto skip;
-            }
-        }
-
-        ApplyMove(Position.Base8DirectionTo(_lastPath.First.Value));
-
-        return true;
-
-        skip:
-        _lastPath = null;
-        return false;
-    }
-
-    private bool TryCreatePath()
-    {
-        foreach (var frontier in FrontierRegions.Keys.OrderBy(x => Vector2ds.DistanceSqr(x, Position)))
-        {
-            var path = FindPath(Position, frontier);
-
-            if (path == null)
-            {
-                continue;
-            }
-
-            Debug.Assert(path.First() == Position);
-
-            _lastPath = new LinkedList<Vector2ds>(path);
-
-            return true;
-        }
-
-        return false;
-    }
-
-    protected override void UpdateAlgorithm(Dictionary<Vector2ds, bool> view, TestRobot[] peers)
-    {
-        CommunicateFindings(view, peers);
-
-        if (TryFollowPath())
-        {
-            return;
-        }
-
-        if (TryCreatePath() && TryFollowPath())
-        {
-            return;
-        }
-
-        // Cannot find paths
-        SetFinished();
-    }
-
-    public override void DebugDraw(QuadBatch batch)
-    {
-        if (_lastPath != null)
-        {
-            Vector2ds? a = null;
-
-            foreach (var b in _lastPath)
-            {
-                if (a != null)
-                {
-                    batch.Line(a.Value, b, Color, 0.1f);
-                }
-
-                a = b;
-            }
-        }
-    }
-}
 
 internal interface IRobotPeer<TSelf> where TSelf : IRobotPeer<TSelf>
 {
@@ -140,24 +27,68 @@ internal interface IRobotView
     IReadOnlyMultiMap<Vector2ds, Vector2ds> FrontierRegions { get; }
     bool IsFinished { get; }
 
-    void DebugDraw(QuadBatch batch);
+    void DebugDraw(QuadBatch batch, Vector2ds mouse);
+    void AddTooltips(StringBuilder sb, Vector2ds mouse);
 }
 
 internal interface IRobot : IRobotView
 {
-    void Update(Dictionary<Vector2ds, bool> view, IEnumerable<IRobot> peers);
+    void BeforeStart();
+    void PrepareUpdate(IReadOnlyDictionary<Vector2ds, bool> view, IEnumerable<IRobot> peers);
+    void Update();
+    void AfterUpdate();
+}
+
+internal interface IRobotGui
+{
+    void Submit();
 }
 
 internal abstract class Robot
 {
     public delegate IRobot FactoryDelegate(RobotCreateInfo ci);
 
-    public static readonly IReadOnlyDictionary<string, FactoryDelegate> Implementations = new Dictionary<string, FactoryDelegate>
-    {
-        { "Test", ci => new TestRobot(ci) }
-    };
+    private delegate IRobot FactoryDelegateWithGui(RobotCreateInfo ci, IRobotGui? gui);
 
-    public static readonly string[] ImplementationNames = Implementations.Keys.ToArray();
+    public readonly struct RobotOptions
+    {
+        public RobotOptions(FactoryDelegate factory, IRobotGui? gui = null)
+        {
+            Factory = factory;
+            Gui = gui;
+        }
+
+        public FactoryDelegate Factory { get; }
+        public IRobotGui? Gui { get; }
+    }
+
+
+    private static void Register(string name, IRobotGui? gui, FactoryDelegateWithGui factory)
+    {
+        var wrapper = new FactoryDelegate(ci => factory(ci, gui));
+        _implementations.Add(name, new RobotOptions(wrapper, gui));
+    }
+
+    private static readonly Dictionary<string, RobotOptions> _implementations;
+
+    static Robot()
+    {
+        _implementations = new Dictionary<string, RobotOptions>();
+
+        Register(
+            "Cooperative Robot", 
+            new SmartRobotGui(), 
+            (ci, gui) => new SmartRobot(ci, Assert.Is<SmartRobotGui>(gui))
+        );
+
+        Register("Implicit Robot", null, (ci, gui) => new TestRobot(ci));
+
+        ImplementationNames =  Implementations.Keys.ToArray();
+    }
+
+    public static IReadOnlyDictionary<string, RobotOptions> Implementations => _implementations;
+
+    public static readonly string[] ImplementationNames;
 
     protected static readonly Vector2ds[] NeighborOffsets = Enum.GetValues<Base8Direction2d>().Select(x => x.Step()).ToArray();
 }
@@ -165,15 +96,18 @@ internal abstract class Robot
 internal abstract class Robot<TSelf> : Robot, IRobot, IRobotPeer<TSelf> where TSelf : Robot<TSelf>
 {
     protected readonly Grid2d<Occupancy> OccupancyGrid;
-    private readonly HashSet<Vector2ds> _frontierEdges = new();
-    private readonly HashMultiMap<Vector2ds, Vector2ds> _frontierRegions = new();
+    protected readonly HashSet<Vector2ds> _frontierEdges = new();
+    protected readonly HashMultiMap<Vector2ds, Vector2ds> _frontierRegions = new();
     private bool _moveApplied;
+
+    protected readonly Vector2ds[] VisionOffsets;
 
     public Robot(RobotCreateInfo ci)
     {
         OccupancyGrid = new Grid2d<Occupancy>(ci.WorldSize);
         Position = ci.Position;
         Color = ci.Color;
+        VisionOffsets = ci.ViewOffsets;
     }
 
     protected Vector2ds WorldSize => OccupancyGrid.Size;
@@ -181,7 +115,7 @@ internal abstract class Robot<TSelf> : Robot, IRobot, IRobotPeer<TSelf> where TS
     public IReadOnlySet<Vector2ds> FrontierEdges => _frontierEdges;
     public IReadOnlyMultiMap<Vector2ds, Vector2ds> FrontierRegions => _frontierRegions;
     public Vector2ds Position { get; private set; }
-    public bool IsFinished { get; protected set; }
+    public bool IsFinished { get; private set; }
     public RgbaFloat4 Color { get; }
     public double ExploreProgress { get; private set; }
 
@@ -298,6 +232,18 @@ internal abstract class Robot<TSelf> : Robot, IRobot, IRobotPeer<TSelf> where TS
 
             Assert.IsTrue(_frontierRegions.Place(group.MinBy(x => Vector2ds.DistanceSqr(x, center)), group) == null);
         }
+
+        var invalidFrontiers = _frontierRegions.Keys.Where(frontier => FindPath(Position, frontier) == null);
+
+        foreach (var frontier in invalidFrontiers)
+        {
+            Assert.IsTrue(_frontierRegions.Remove(frontier, out var edges));
+
+            foreach (var edge in edges)
+            {
+                Assert.IsTrue(_frontierEdges.Remove(edge));
+            }
+        }
     }
 
     private void UpdateExplorationStatus()
@@ -320,30 +266,62 @@ internal abstract class Robot<TSelf> : Robot, IRobot, IRobotPeer<TSelf> where TS
         ExploreProgress = exploredCells / (double)(size.X * size.Y);
     }
 
-    public void Update(Dictionary<Vector2ds, bool> view, IEnumerable<IRobot> peers)
+    public virtual void BeforeStart()
     {
-        foreach (var (position, isWall) in view)
+        
+    }
+
+    private TSelf[]? _peers;
+    private IReadOnlyDictionary<Vector2ds, bool>? _view;
+
+    protected IReadOnlyList<TSelf> Peers => Assert.NotNull(_peers);
+    protected IReadOnlyDictionary<Vector2ds, bool> View => Assert.NotNull(_view);
+
+    protected virtual void LoadFoundTile(Vector2ds position, bool value)
+    {
+        OccupancyGrid[position] = value ? Occupancy.Obstacle : Occupancy.Open;
+    }
+
+    public void PrepareUpdate(IReadOnlyDictionary<Vector2ds, bool> view, IEnumerable<IRobot> peers)
+    {
+        _view = view;
+        _peers = peers.Cast<TSelf>().ToArray();
+        PrepareUpdateCore();
+    }
+
+    public void Update()
+    {
+        foreach (var (position, isWall) in View)
         {
-            OccupancyGrid[position] = isWall ? Occupancy.Obstacle : Occupancy.Open;
+            LoadFoundTile(position, isWall);
         }
 
-        OccupancyGrid[Position] = Occupancy.Open;
+        LoadFoundTile(Position, false);
 
         UpdateExplorationStatus();
         UpdateFrontiers();
 
         if (_frontierEdges.Count == 0)
         {
+            Assert.IsTrue(_frontierRegions.Count == 0);
             IsFinished = true;
             return;
         }
 
-        UpdateAlgorithm(view, peers.Cast<TSelf>().ToArray());
+        Assert.IsTrue(_frontierRegions.Count > 0);
 
+        UpdateCore();
+    }
+
+    public void AfterUpdate()
+    {
+        AfterUpdateCore();
         _moveApplied = false;
     }
 
-    protected abstract void UpdateAlgorithm(Dictionary<Vector2ds, bool> view, TSelf[] peers);
+    protected virtual void PrepareUpdateCore() { }
+    protected virtual void UpdateCore() { }
+    protected virtual void AfterUpdateCore() { }
 
     protected List<Vector2ds>? FindPath(Vector2ds source, Vector2ds destination)
     {
@@ -417,7 +395,15 @@ internal abstract class Robot<TSelf> : Robot, IRobot, IRobotPeer<TSelf> where TS
         return null;
     }
 
-    public abstract void DebugDraw(QuadBatch batch);
+    public virtual void DebugDraw(QuadBatch batch, Vector2ds mouse)
+    {
+
+    }
+
+    public virtual void AddTooltips(StringBuilder sb, Vector2ds mouse)
+    {
+
+    }
 }
 
 public enum Occupancy : byte
@@ -432,6 +418,7 @@ internal readonly struct RobotCreateInfo
     public required Vector2ds WorldSize { get; init; }
     public required Vector2ds Position { get; init; }
     public required RgbaFloat4 Color { get; init; }
+    public Vector2ds[] ViewOffsets { get; init; }
 }
 
 internal sealed class Simulation
@@ -439,32 +426,20 @@ internal sealed class Simulation
     private readonly Grid2d<bool> _map;
     private readonly Grid2d<int> _exploredHistogram;
     private readonly IRobot[] _robots;
+    private readonly Vector2ds[] _visionOffsets;
 
-    private readonly HashSet<Vector2ds> _visionOffsets;
+    private IEnumerable<IRobot> Unfinished => _robots.Where(x => !x.IsFinished);
 
-    private Simulation(Grid2d<bool> map, IRobot[] robots, int visionRadius)
+    private Simulation(Grid2d<bool> map, IRobot[] robots, IEnumerable<Vector2ds> visionOffsets)
     {
         _map = map;
         _exploredHistogram = new Grid2d<int>(map.Size);
         _robots = robots;
-        _visionOffsets = new HashSet<Vector2ds>();
+        _visionOffsets = visionOffsets.ToArray();
 
-        for (var x = -visionRadius; x <= visionRadius; x++)
+        foreach (var robot in robots)
         {
-            for (var y = -visionRadius; y <= visionRadius; y++)
-            {
-                if (x == 0 && y == 0)
-                {
-                    continue;
-                }
-
-                var v = new Vector2ds(x, y);
-
-                if (v.Norm <= visionRadius)
-                {
-                    _visionOffsets.Add(v);
-                }
-            }
+            robot.BeforeStart();
         }
     }
 
@@ -488,19 +463,18 @@ internal sealed class Simulation
             return;
         }
 
-        IsFinished = true;
-
-        for (var index = 0; index < _robots.Length; index++)
+        if (Ticks == 0)
         {
-            var robot = _robots[index];
-
-            if (robot.IsFinished)
+            foreach (var robot in _robots)
             {
-                continue;
+                robot.BeforeStart();
             }
+        }
 
-            IsFinished = false;
+        ++Ticks;
 
+        foreach (var robot in Unfinished)
+        {
             var view = new Dictionary<Vector2ds, bool>();
 
             foreach (var tile in TilesInView(robot))
@@ -510,13 +484,20 @@ internal sealed class Simulation
                 view.Add(tile, _map[tile]);
             }
 
-            robot.Update(view, _robots.Where(x => x != robot));
+            robot.PrepareUpdate(view, _robots.Where(x => x != robot));
         }
 
-        if (!IsFinished)
+        foreach (var robot in Unfinished)
         {
-            ++Ticks;
+            robot.Update();
         }
+
+        foreach (var robot in Unfinished)
+        {
+            robot.AfterUpdate();
+        }
+
+        IsFinished = !Unfinished.Any();
     }
 
     public static bool TryCreateSimulation(
@@ -539,6 +520,26 @@ internal sealed class Simulation
 
         var random = new Random(seed);
 
+        var visionOffsets = new List<Vector2ds>();
+
+        for (var x = -visionRadius; x <= visionRadius; x++)
+        {
+            for (var y = -visionRadius; y <= visionRadius; y++)
+            {
+                if (x == 0 && y == 0)
+                {
+                    continue;
+                }
+
+                var v = new Vector2ds(x, y);
+
+                if (v.Norm <= visionRadius)
+                {
+                    visionOffsets.Add(v);
+                }
+            }
+        }
+
         for (var i = 0; i < robotCount; i++)
         {
             robots[i] = factory(new RobotCreateInfo
@@ -550,11 +551,12 @@ internal sealed class Simulation
                     random.NextVector4(min: 0.25f, max: 1f) with { W = 1 },
                     random.NextVector4(min: 0.25f, max: 1f) with { W = 1 },
                     random.NextVector4(min: 0.25f, max: 1f) with { W = 1 }
-                )
+                ),
+                ViewOffsets = visionOffsets.ToArray()
             });
         }
 
-        result = new Simulation(map, robots, visionRadius);
+        result = new Simulation(map, robots, visionOffsets);
 
         return true;
     }
