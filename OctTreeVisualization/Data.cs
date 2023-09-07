@@ -124,13 +124,13 @@ public sealed class Burrower<T> : Burrower where T : class
     }
 }
 
-public sealed class HashedBitOctree
+public sealed class BitOctree
 {
     private static readonly Base6Direction3dMask[] DirectionMaskByOctant;
     private static readonly byte[][] OctantsByDirection;
     private static readonly byte[][] ReflectionsByDirection;
 
-    static HashedBitOctree()
+    static BitOctree()
     {
         DirectionMaskByOctant = new Base6Direction3dMask[8];
         var octantsByDirection = new List<byte>[6];
@@ -216,7 +216,7 @@ public sealed class HashedBitOctree
     private readonly PriorityQueue<NodeInfo, float> _nodeQueryQueue = new();
     private readonly PriorityQueue<RegionInfo, float> _regionQueryQueue = new();
 
-    public HashedBitOctree(int log)
+    public BitOctree(int log)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(log, 1, nameof(log));
         ArgumentOutOfRangeException.ThrowIfGreaterThan(log, 21, nameof(log));
@@ -1180,7 +1180,7 @@ public sealed class HashedBitOctree
     {
         var lzm = 63 - BitOperations.LeadingZeroCount(lc);
         log = (byte)(Log - lzm / 3);
-        var cb = lc & ~(1u << lzm);
+        var cb = lc & ~(1UL << lzm);
         position = MortonCode3D.Decode(cb << log * 3);
     }
 

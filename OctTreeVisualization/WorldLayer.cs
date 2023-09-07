@@ -14,7 +14,7 @@ internal sealed class WorldLayer : VisualizationLayer3d
 {
     private readonly QuadBatch _proxyBatch;
     private readonly QuadBatch _voxelBatch;
-    private HashedBitOctree? _octree;
+    private BitOctree? _octree;
 
     private int _recreateLog = 2;
     private int _placeX;
@@ -59,7 +59,7 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
             if (ImGui.Button("Create"))
             {
-                _octree = new HashedBitOctree((byte)_recreateLog);
+                _octree = new BitOctree((byte)_recreateLog);
                 _lastRenderedVersion = -1;
             }
 
