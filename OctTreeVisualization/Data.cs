@@ -1164,7 +1164,7 @@ public sealed class BitOctree
     public Vector3di DecodePosition(ulong lc)
     {
         var lzm = 63 - BitOperations.LeadingZeroCount(lc);
-        var cb = lc & ~(1u << lzm);
+        var cb = lc & ~(1UL << lzm);
         return MortonCode3D.Decode(cb << (Log - lzm / 3) * 3);
     }
 
