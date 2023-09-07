@@ -24,12 +24,12 @@ public enum Base8Direction2d : byte
 
 public enum Base6Direction3d : byte
 {
-    L,
-    R,
-    U,
-    D,
-    F,
-    B
+    L = 0,
+    R = 1,
+    U = 2,
+    D = 3,
+    F = 4,
+    B = 5
 }
 
 [Flags]

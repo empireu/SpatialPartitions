@@ -43,6 +43,19 @@ public static class Extensions
         _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, $"Unexpected direction {dir}")
     };
 
+    public static Base6Direction3d Opposite(this Base6Direction3d dir) => dir switch
+    {
+        Base6Direction3d.L => Base6Direction3d.R,
+        Base6Direction3d.R => Base6Direction3d.L,
+        Base6Direction3d.U => Base6Direction3d.D,
+        Base6Direction3d.D => Base6Direction3d.U,
+        Base6Direction3d.F => Base6Direction3d.B,
+        Base6Direction3d.B => Base6Direction3d.F,
+        _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, null)
+    };
+
+    public static Base6Direction3dMask Mask(this Base6Direction3d dir) => (Base6Direction3dMask)(1 << (int)dir);
+
     public static bool Contains(this Rectangle rect, Vector2ds p) => rect.Contains(p.X, p.Y);
     public static Vector2ds CenterI(this Rectangle rect) => new(rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
     public static Vector2 Center(this Rectangle rect) => new(rect.X + rect.Width / 2f, rect.Y + rect.Height / 2f);
@@ -183,5 +196,19 @@ public static class Extensions
         ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY, Z = max.Z }), colors);
         ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY, X = max.X }), colors);
         ColoredQuadBox(batch, edgeScale * Matrix4x4.CreateTranslation(min with { Y = edgeY, X = max.X, Z = max.Z }), colors);
+    }
+
+    // Debug only
+    public static string Bits(this ulong u)
+    {
+        var str = "";
+
+        while (u > 0)
+        {
+            str = (u & 1) + str;
+            u >>= 1;
+        }
+
+        return str;
     }
 }

@@ -26,6 +26,8 @@ internal sealed class WorldLayer : VisualizationLayer3d
     private float _f1 = 0.02f;
     private float _a1 = 10f;
 
+    private ulong _selected;
+
     public WorldLayer(VisualizationApp app, ImGuiLayer imGui) : base(app, imGui)
     {
         _proxyBatch = GetBatch();
@@ -79,6 +81,10 @@ internal sealed class WorldLayer : VisualizationLayer3d
                 ImGui.SliderInt("X", ref _placeX, _octree.Min.X, _octree.Max.X - 1);
                 ImGui.SliderInt("Y", ref _placeY, _octree.Min.Y, _octree.Max.Y - 1);
                 ImGui.SliderInt("Z", ref _placeZ, _octree.Min.Z, _octree.Max.Z - 1);
+
+                ImGui.Text($"Closest Code: {_selected}");
+                ImGui.Text($"Closest Pos: {_octree.DecodePosition(_selected)}");
+                ImGui.Text($"Closest Log: {_octree.DecodeLog(_selected)}");
 
                 if (ImGui.IsKeyReleased(ImGuiKey.RightArrow))
                 {
@@ -233,7 +239,7 @@ internal sealed class WorldLayer : VisualizationLayer3d
             _proxyBatch.Clear();
             _voxelBatch.Clear();
 
-            _octree.Traverse((node, pos, log) =>
+            _octree.Traverse((node, lc, pos, log) =>
             {
                 Vector3 min = pos;
                 Vector3 max = pos + (1 << log);
@@ -328,6 +334,8 @@ internal sealed class WorldLayer : VisualizationLayer3d
             BoundingBox3di bounds = result.Bounds;
 
             batch.ColoredQuadBoxFrame(bounds.Min, bounds.Max, 0.05f, new QuadColors(0.9f, 0.2f, 0.1f, 0.5f));
+
+            _selected = result.LocationCode;
         });
 
         _octree.GetClosestEmptyRegion(queryPos)?.Also(result =>
@@ -336,6 +344,16 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
             batch.ColoredQuadBox(bounds.Min, bounds.Max, new QuadColors(0.1f, 0.1f, 0.9f, 0.2f));
         });
+
+        if (_octree.Contains(_selected >> 3))
+        {
+            foreach (var frontier in _octree.EnumerateFrontierCells())
+            {
+                var bounds = _octree.NodeBounds(frontier);
+
+                batch.ColoredQuadBoxFrame(bounds.Min, bounds.Max, 0.05f, new QuadColors(Random.Shared.NextVector4()));
+            }
+        }
     }
 
     protected override void RenderStack()
