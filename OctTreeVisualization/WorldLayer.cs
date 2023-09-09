@@ -28,6 +28,8 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
     private ulong _selected;
 
+    private bool _renderTerrain = true;
+
     public WorldLayer(VisualizationApp app, ImGuiLayer imGui) : base(app, imGui)
     {
         _proxyBatch = GetBatch();
@@ -187,6 +189,10 @@ internal sealed class WorldLayer : VisualizationLayer3d
                     Console.WriteLine($"{results} hits");
                     Console.WriteLine($"Range: {rangeTime * 1000:F3}ms, Naive: {naiveTime * 1000:F3}ms");
                 }
+
+                ImGui.Separator();
+
+                ImGui.Checkbox("Render Terrain", ref _renderTerrain);
             }
         }
 
@@ -320,7 +326,7 @@ internal sealed class WorldLayer : VisualizationLayer3d
         );
     }
 
-    private void RenderQueries(QuadBatch batch)
+    private void RenderSelections(QuadBatch batch)
     {
         if (_octree == null)
         {
@@ -344,23 +350,37 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
             batch.ColoredQuadBox(bounds.Min, bounds.Max, new QuadColors(0.1f, 0.1f, 0.9f, 0.2f));
         });
+    }
 
-        if (_octree.Contains(_selected >> 3))
+    private void RenderFrontier(QuadBatch batch)
+    {
+        if (_octree == null)
         {
-            foreach (var frontier in _octree.EnumerateFrontierCells())
-            {
-                var bounds = _octree.NodeBounds(frontier);
+            return;
+        }
 
-                batch.ColoredQuadBoxFrame(bounds.Min, bounds.Max, 0.05f, new QuadColors(Random.Shared.NextVector4()));
-            }
+        foreach (var posD in _octree.EnumerateFrontierCells())
+        {
+            Vector3 pos = posD;
+
+            batch.ColoredQuadBox(
+                pos - new Vector3(0.25f),
+                pos + new Vector3(0.25f),
+                new QuadColors(1, 1, 1, 1)
+            );
         }
     }
 
     protected override void RenderStack()
     {
-        SubmitTree();
+        if (_renderTerrain)
+        {
+            SubmitTree();
+        }
+
         RenderPassMain(RenderGizmo);
+        //RenderPassMain(RenderSelections);
         RenderPassMain(RenderHighlight);
-        RenderPassMain(RenderQueries);
+        RenderPassMain(RenderFrontier);
     }
 }

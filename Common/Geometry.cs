@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Common;
 
@@ -290,6 +291,7 @@ public readonly struct Vector3di : IComparable<Vector3di>
     public static bool operator !=(Vector3di a, Vector3di b) => !a.Equals(b);
 
     public static implicit operator Vector3(Vector3di v) => new(v.X, v.Y, v.Z);
+    public static implicit operator Vector3d(Vector3di v) => new(v.X, v.Y, v.Z);
     public static explicit operator Vector3di(Vector3 v) => new((int)v.X, (int)v.Y, (int)v.Z);
 
     public static int DistanceSqr(Vector3di a, Vector3di b) => (a - b).NormSqr;
@@ -322,6 +324,70 @@ public readonly struct Vector3di : IComparable<Vector3di>
     );
 }
 
+public readonly struct Vector3d
+{
+    public static readonly Vector3d Zero = new(0, 0, 0);
+    public static readonly Vector3d One = new(1, 1, 1);
+    public static readonly Vector3d UnitX = new(1, 0, 0);
+    public static readonly Vector3d UnitY = new(0, 1, 0);
+    public static readonly Vector3d UnitZ = new(0, 0, 1);
+
+    public double X { get; }
+    public double Y { get; }
+    public double Z { get; }
+
+    public Vector3d(double x, double y, double z)
+    {
+        X = x;
+        Y = y;
+        Z = z;
+    }
+
+    public Vector3d(double value)
+    {
+        X = value;
+        Y = value;
+        Z = value;
+    }
+
+    public double NormSqr => Dot(this, this);
+    public double Norm => Math.Sqrt(NormSqr);
+    public Vector3d Normalized() => this / Norm;
+
+    public static double Dot(Vector3d a, Vector3d b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+    public static Vector3d Cross(Vector3d a, Vector3d b) => new(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X);
+    public static double DistanceSqr(Vector3d a, Vector3d b) => (a - b).NormSqr;
+    public static double Distance(Vector3d a, Vector3d b) => (a - b).Norm;
+    public static Vector3d Lerp(Vector3d a, Vector3d b, double t) => new(Mathx.Lerp(a.X, b.X, t), Mathx.Lerp(a.Y, b.Y, t), Mathx.Lerp(a.Z, b.Z, t));
+
+    public static Vector3d operator +(Vector3d v) => v;
+    public static Vector3d operator -(Vector3d v) => new(-v.X, -v.Y, -v.Z);
+    public static Vector3d operator +(Vector3d a, Vector3d b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
+    public static Vector3d operator -(Vector3d a, Vector3d b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
+    public static Vector3d operator *(Vector3d a, Vector3d b) => new(a.X * b.X, a.Y * b.Y, a.Z * b.Z);
+    public static Vector3d operator /(Vector3d a, Vector3d b) => new(a.X / b.X, a.Y / b.Y, a.Z / b.Z);
+    public static Vector3d operator *(Vector3d a, double scalar) => new(a.X * scalar, a.Y * scalar, a.Z * scalar);
+    public static Vector3d operator /(Vector3d a, double scalar) => new(a.X / scalar, a.Y / scalar, a.Z / scalar);
+
+    public static implicit operator Vector3d(Vector3 v) => new(v.X, v.Y, v.Z);
+    public static implicit operator Vector3(Vector3d v) => new((float)v.X, (float)v.Y, (float)v.Z);
+
+    public static Vector3 Max(Vector3 a, Vector3 b) => new(
+        a.X > b.X ? a.X : b.X,
+        a.Y > b.Y ? a.Y : b.Y,
+        a.Z > b.Z ? a.Z : b.Z
+    );
+
+    public static Vector3d Min(Vector3d a, Vector3d b) => new(
+        a.X < b.X ? a.X : b.X,
+        a.Y < b.Y ? a.Y : b.Y,
+        a.Z < b.Z ? a.Z : b.Z
+    );
+
+    public static Vector3d Clamp(Vector3d value, Vector3d min, Vector3d max) =>
+        Min(Max(value, min), max);
+}
+
 public readonly struct BoundingBox3di
 {
     public Vector3di Min { get; init; }
@@ -342,6 +408,8 @@ public readonly struct BoundingBox3di
     public bool IsValid => Min.X <= Max.X && Min.Y <= Max.Y && Min.Z <= Max.Z;
 
     public int Volume => (Max.X - Min.X) * (Max.Y - Min.Y) * (Max.Z - Min.Z);
+
+    public Vector3d Center => new((Min.X + Max.X) / 2d, (Min.Y + Max.Y) / 2d, (Min.Z + Max.Z) / 2d);
 
     public bool Contains(Vector3di point) =>
         point.X >= Min.X && point.X <= Max.X &&

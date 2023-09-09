@@ -423,3 +423,58 @@ public struct Average2d
 
     public void Add(Vector2d value) => Add(value.X, value.Y);
 }
+
+
+public struct Average3d
+{
+    public int Count { get; private set; }
+    public double ValueX { get; private set; }
+    public double ValueY { get; private set; }
+    public double ValueZ { get; private set; }
+
+    public static Average3d FromKnownValue(double x, double y, double z, int count) => new()
+    {
+        ValueX = x,
+        ValueY = y,
+        ValueZ = z,
+        Count = count
+    };
+
+    public static Average3d FromBoundingBox(BoundingBox3di box) => FromKnownValue(
+        (box.Min.X + box.Max.X) / 2.0,
+        (box.Min.Y + box.Max.Y) / 2.0,
+        (box.Min.Z + box.Max.Z) / 2.0,
+        box.Volume
+    );
+
+    public static Average3d Combine(Average3d a, Average3d b)
+    {
+        double n = a.Count + b.Count;
+
+        var kA = a.Count / n;
+        var kB = b.Count / n;
+
+        return new Average3d
+        {
+            ValueX = a.ValueX * kA + b.ValueX * kB,
+            ValueY = a.ValueY * kA + b.ValueY * kB,
+            ValueZ = a.ValueZ * kA + b.ValueZ * kB,
+            Count = a.Count + b.Count
+        };
+    }
+
+    public readonly Vector3d Value => new(ValueX, ValueY, ValueZ);
+
+    public void Add(double x, double y, double z)
+    {
+        ValueX += (x - ValueX) / (Count + 1);
+        ValueY += (y - ValueY) / (Count + 1);
+        ValueZ += (z - ValueZ) / (Count + 1);
+        ++Count;
+    }
+
+    public void Add(Vector3di v)
+    {
+        Add(v.X, v.Y, v.Z);
+    }
+}

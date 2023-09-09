@@ -54,6 +54,17 @@ public static class Extensions
         _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, null)
     };
 
+    public static Vector3di Step(this Base6Direction3d dir) => dir switch
+    {
+        Base6Direction3d.L => new Vector3di(-1, 0, 0),
+        Base6Direction3d.R => new Vector3di(1, 0, 0),
+        Base6Direction3d.U => new Vector3di(0, 1, 0),
+        Base6Direction3d.D => new Vector3di(0, -1, 0),
+        Base6Direction3d.F => new Vector3di(0, 0, -1),
+        Base6Direction3d.B => new Vector3di(0, 0, 1),
+        _ => throw new ArgumentOutOfRangeException(nameof(dir), dir, null)
+    };
+
     public static Base6Direction3dMask Mask(this Base6Direction3d dir) => (Base6Direction3dMask)(1 << (int)dir);
 
     public static bool Contains(this Rectangle rect, Vector2ds p) => rect.Contains(p.X, p.Y);
@@ -211,4 +222,189 @@ public static class Extensions
 
         return str;
     }
+
+    public static IEnumerable<Vector3di> EnumerateFace(this BoundingBox3di box, Base6Direction3d face)
+    {
+        switch (face)
+        {
+            case Base6Direction3d.L:
+                for (var z = box.Min.Z; z <= box.Max.Z; z++)
+                {
+                    for (var y = box.Min.Y; y <= box.Max.Y; y++)
+                    {
+                        yield return new Vector3di(box.Min.X, y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.R:
+                for (var z = box.Min.Z; z <= box.Max.Z; z++)
+                {
+                    for (var y = box.Min.Y; y <= box.Max.Y; y++)
+                    {
+                        yield return new Vector3di(box.Max.X, y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.U:
+                for (var z = box.Min.Z; z <= box.Max.Z; z++)
+                {
+                    for (var x = box.Min.X; x <= box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, box.Max.Y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.D:
+                for (var z = box.Min.Z; z <= box.Max.Z; z++)
+                {
+                    for (var x = box.Min.X; x <= box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, box.Min.Y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.F:
+                for (var y = box.Min.Y; y <= box.Max.Y; y++)
+                {
+                    for (var x = box.Min.X; x <= box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, y, box.Min.Z);
+                    }
+                }
+                break;
+            case Base6Direction3d.B:
+                for (var y = box.Min.Y; y <= box.Max.Y; y++)
+                {
+                    for (var x = box.Min.X; x <= box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, y, box.Max.Z);
+                    }
+                }
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(face), face, null);
+        }
+    }
+
+    public static IEnumerable<Vector3di> EnumerateFaceExclusive(this BoundingBox3di box, Base6Direction3d face)
+    {
+        switch (face)
+        {
+            case Base6Direction3d.L:
+                for (var z = box.Min.Z; z < box.Max.Z; z++)
+                {
+                    for (var y = box.Min.Y; y < box.Max.Y; y++)
+                    {
+                        yield return new Vector3di(box.Min.X, y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.R:
+                for (var z = box.Min.Z; z < box.Max.Z; z++)
+                {
+                    for (var y = box.Min.Y; y < box.Max.Y; y++)
+                    {
+                        yield return new Vector3di(box.Max.X - 1, y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.U:
+                for (var z = box.Min.Z; z < box.Max.Z; z++)
+                {
+                    for (var x = box.Min.X; x < box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, box.Max.Y - 1, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.D:
+                for (var z = box.Min.Z; z < box.Max.Z; z++)
+                {
+                    for (var x = box.Min.X; x < box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, box.Min.Y, z);
+                    }
+                }
+                break;
+            case Base6Direction3d.F:
+                for (var y = box.Min.Y; y < box.Max.Y; y++)
+                {
+                    for (var x = box.Min.X; x < box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, y, box.Min.Z);
+                    }
+                }
+                break;
+            case Base6Direction3d.B:
+                for (var y = box.Min.Y; y < box.Max.Y; y++)
+                {
+                    for (var x = box.Min.X; x < box.Max.X; x++)
+                    {
+                        yield return new Vector3di(x, y, box.Max.Z - 1);
+                    }
+                }
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(face), face, null);
+        }
+    }
+    
+    public static BoundingBox3di ExtrudeNormal(this BoundingBox3di @base, Base6Direction3d direction, int height = 1)
+    {
+        var min = @base.Min;
+        var max = @base.Max;
+
+        return direction switch
+        {
+            Base6Direction3d.L => new BoundingBox3di(
+                new Vector3di(min.X - height, min.Y, min.Z),
+                new Vector3di(min.X, max.Y, max.Z)),
+            Base6Direction3d.R => new BoundingBox3di(
+                new Vector3di(max.X, min.Y, min.Z),
+                new Vector3di(max.X + height, max.Y, max.Z)),
+            Base6Direction3d.U => new BoundingBox3di(
+                new Vector3di(min.X, max.Y, min.Z),
+                new Vector3di(max.X, max.Y + height, max.Z)),
+            Base6Direction3d.D => new BoundingBox3di(
+                new Vector3di(min.X, min.Y - height, min.Z),
+                new Vector3di(max.X, min.Y, max.Z)),
+            Base6Direction3d.F => new BoundingBox3di(
+                new Vector3di(min.X, min.Y, min.Z - height),
+                new Vector3di(max.X, max.Y, min.Z)),
+            Base6Direction3d.B => new BoundingBox3di(
+                new Vector3di(min.X, min.Y, max.Z),
+                new Vector3di(max.X, max.Y, max.Z + height)),
+            _ => throw new ArgumentOutOfRangeException()
+        };
+    }
+
+    public static BoundingBox3di SliceNormal(this BoundingBox3di @base, Base6Direction3d direction, int height = 1)
+    {
+        var min = @base.Min;
+        var max = @base.Max;
+
+        return direction switch
+        {
+            Base6Direction3d.L => new BoundingBox3di(
+                new Vector3di(max.X - height, min.Y, min.Z),
+                new Vector3di(max.X, max.Y, max.Z)),
+            Base6Direction3d.R => new BoundingBox3di(
+                new Vector3di(min.X, min.Y, min.Z),
+                new Vector3di(min.X + height, max.Y, max.Z)),
+            Base6Direction3d.U => new BoundingBox3di(
+                new Vector3di(min.X, min.Y, min.Z),
+                new Vector3di(max.X, min.Y + height, max.Z)),
+            Base6Direction3d.D => new BoundingBox3di(
+                new Vector3di(min.X, max.Y - height, min.Z),
+                new Vector3di(max.X, max.Y, max.Z)),
+            Base6Direction3d.F => new BoundingBox3di(
+                new Vector3di(min.X, min.Y, max.Z - height),
+                new Vector3di(max.X, max.Y, max.Z)),
+            Base6Direction3d.B => new BoundingBox3di(
+                new Vector3di(min.X, min.Y, min.Z),
+                new Vector3di(max.X, max.Y, min.Z + height)),
+            _ => throw new ArgumentOutOfRangeException()
+        };
+    }
+
 }

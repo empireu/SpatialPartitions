@@ -1,7 +1,9 @@
-﻿using System.Diagnostics;
+﻿using System.ComponentModel;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Common;
+using GameFramework.Utilities;
 
 namespace OctTreeVisualization;
 
@@ -65,61 +67,100 @@ public readonly struct HashedOctreeNodeInfo
 
 // Bit Octree, as in, 2 states per voxel.
 
-public abstract class Burrower
+public abstract class Pool
 {
-    public static Burrower<List<T>> ForList<T>() => 
+    public static Pool<List<T>> ForList<T>() => 
         new(() => new List<T>(), t => t.Clear());
-    
-    public static Burrower<Stack<T>> ForStack<T>() => 
+
+    public static Pool<HashSet<T>> ForHashSet<T>() =>
+        new(() => new HashSet<T>(), t => t.Clear());
+
+    public static Pool<Stack<T>> ForStack<T>() => 
         new(() => new Stack<T>(), t => t.Clear());
     
-    public static Burrower<Queue<T>> ForQueue<T>() => 
+    public static Pool<Queue<T>> ForQueue<T>() => 
         new(() => new Queue<T>(), t => t.Clear());
  
-    public static Burrower<PriorityQueue<TElement, TPriority>> ForPriorityQueue<TElement, TPriority>() =>
+    public static Pool<PriorityQueue<TElement, TPriority>> ForPriorityQueue<TElement, TPriority>() =>
         new(() => new PriorityQueue<TElement, TPriority>(), t => t.Clear());
 }
 
 // Basic object pool
-public sealed class Burrower<T> : Burrower where T : class
+public sealed class Pool<T> : Pool where T : class
 {
     private readonly Func<T> _factory;
     private readonly Action<T>? _clear;
     private readonly Stack<T> _free = new();
+    private readonly HashSet<T> _inUse = new();
 
-    public Burrower(Func<T> factory, Action<T>? clear = null)
+    public Pool(Func<T> factory, Action<T>? clear = null, int maxItems = 1024)
     {
         _factory = factory;
         _clear = clear;
+        MaxItems = maxItems;
     }
 
-    public Burrow Get(out T item)
+    public int MaxItems { get; }
+    public int FreeCount => _free.Count;
+    public int InUseCount => _inUse.Count;
+    public int AllocationCount { get; private set; }
+
+    private T PopOrAllocate()
     {
-        item = _free.TryPop(out var freeItem) ? freeItem : _factory();
-
-        return new Burrow(this, item);
-    }
-
-    public void Add(T item)
-    {
-        _clear?.Invoke(item);
-        _free.Push(item);
-    }
-
-    public readonly struct Burrow : IDisposable
-    {
-        private readonly Burrower<T> _burrower;
-        private readonly T _item;
-
-        public Burrow(Burrower<T> burrower, T item)
+        T element;
+        
+        if (_free.TryPop(out var freeItem))
         {
-            _burrower = burrower;
-            _item = item;
+            element = freeItem;
+        }
+        else
+        {
+            element = _factory();
+            ++AllocationCount;
+        }
+
+        Assert.IsTrue(_inUse.Add(element));
+        return element;
+    }
+
+    public Handler Handle(out T item)
+    {
+        item = PopOrAllocate();
+        return new Handler(this, item);
+    }
+
+    public Handler Handle() => new(this, PopOrAllocate());
+
+    public T Rent() => PopOrAllocate();
+
+    public void Return(T item)
+    {
+        if (!_inUse.Remove(item))
+        {
+            throw new ArgumentException("Returned item did not originate from the pool");
+        }
+
+        if (_free.Count < MaxItems)
+        {
+            _clear?.Invoke(item);
+            _free.Push(item);
+        }
+    }
+
+    public readonly struct Handler : IDisposable
+    {
+        private readonly Pool<T> _pool;
+        public readonly T Item;
+
+        public Handler(Pool<T> pool, T item)
+        {
+            _pool = pool;
+            Item = item;
         }
 
         public void Dispose()
         {
-            _burrower.Add(_item);
+            _pool.Return(Item);
         }
     }
 }
@@ -209,10 +250,9 @@ public sealed class BitOctree
 
     private readonly Dictionary<ulong, BitOctreeNode> _nodes = new();
 
-    private readonly Burrower<Stack<DescentData>> _descentStackPool = Burrower.ForStack<DescentData>();
-    private readonly Burrower<Stack<LogTraversalData>> _logTraversalStackPool = Burrower.ForStack<LogTraversalData>();
-    private readonly Burrower<Stack<PositionLogTraversalData>> _positionLogTraversalStackPool = Burrower.ForStack<PositionLogTraversalData>();
-
+    private readonly Pool<Stack<DescentData>> _descentStackPool = Pool.ForStack<DescentData>();
+    private readonly Pool<Stack<LogTraversalData>> _logTraversalStackPool = Pool.ForStack<LogTraversalData>();
+    private readonly Pool<Stack<PositionLogTraversalData>> _positionLogTraversalStackPool = Pool.ForStack<PositionLogTraversalData>();
     private readonly PriorityQueue<NodeInfo, float> _nodeQueryQueue = new();
     private readonly PriorityQueue<RegionInfo, float> _regionQueryQueue = new();
 
@@ -260,7 +300,7 @@ public sealed class BitOctree
             throw new ArgumentOutOfRangeException(nameof(tile), "Outside of the bounds of the octree");
         }
 
-        using (_descentStackPool.Get(out var stack))
+        using (_descentStackPool.Handle(out var stack))
         {
             var result = InsertCore(stack, RootCode, Log, tile);
 
@@ -377,7 +417,7 @@ public sealed class BitOctree
             throw new ArgumentOutOfRangeException(nameof(tile), "Outside of the bounds of the octree");
         }
 
-        using (_descentStackPool.Get(out var stack))
+        using (_descentStackPool.Handle(out var stack))
         {
             var result = RemoveCore(stack, RootCode, Log, tile);
 
@@ -470,7 +510,7 @@ public sealed class BitOctree
 
     public void Traverse(TraverseDelegate traverse)
     {
-        using (_positionLogTraversalStackPool.Get(out var stack))
+        using (_positionLogTraversalStackPool.Handle(out var stack))
         {
             stack.Push(new PositionLogTraversalData
             {
@@ -525,7 +565,7 @@ public sealed class BitOctree
     // Assumes target is false by default
     public void ReadRange(Vector3di min, IGrid3d<bool> results)
     {
-        using (_positionLogTraversalStackPool.Get(out var stack))
+        using (_positionLogTraversalStackPool.Handle(out var stack))
         {
             stack.Push(new PositionLogTraversalData
             {
@@ -954,7 +994,7 @@ public sealed class BitOctree
 
         var adjacentOctants = OctantsByDirection[(int)direction.Opposite()];
 
-        using (_logTraversalStackPool.Get(out var stack))
+        using (_logTraversalStackPool.Handle(out var stack))
         {
             stack.Push(new LogTraversalData
             {
@@ -1008,31 +1048,32 @@ public sealed class BitOctree
         }
     }
 
-    private bool IsFrontierCell(ulong lcFilledNode)
+    /*
+     * Novel (and untested!) way to find frontiers. It works as follows:
+     *
+     */
+
+    private void BuildFrontierData(ulong lcFilledNode, FrontierDataBufferBuilder builder)
     {
         for (var i = 0; i < 6; i++)
         {
             var dir = (Base6Direction3d)i;
 
-            if (!TryGetTopmostNeighbor(
-                    lcFilledNode, 
-                    dir, 
-                    out _, 
-                    out var lcNeighborNode, 
-                    out var neighborLog)
-                )
+            if (!TryGetTopmostNeighbor(lcFilledNode, dir, out _, out var lcNeighborNode, out var neighborLog))
             {
-                return true;
+                builder.AddMissingFace(dir);
+                continue;
             }
 
             if (neighborLog == 0)
             {
+                builder.AddNeighbor(dir, lcNeighborNode);
                 continue;
             }
 
             var adjacentOctants = OctantsByDirection[(int)dir.Opposite()];
 
-            using (_logTraversalStackPool.Get(out var stack))
+            using (_logTraversalStackPool.Handle(out var stack))
             {
                 stack.Push(new LogTraversalData
                 {
@@ -1049,6 +1090,7 @@ public sealed class BitOctree
 
                     if (node.IsFilled)
                     {
+                        builder.AddNeighbor(dir, lc);
                         continue;
                     }
 
@@ -1057,10 +1099,15 @@ public sealed class BitOctree
                         for (var index = 0; index < adjacentOctants.Length; index++)
                         {
                             var adjacentOctant = adjacentOctants[index];
+                            var childCode = ChildCode(lc, adjacentOctant);
 
-                            if (!node.HasChild(adjacentOctant))
+                            if (node.HasChild(adjacentOctant))
                             {
-                                return true;
+                                builder.AddNeighbor(dir, childCode);
+                            }
+                            else
+                            {
+                                builder.AddInterface(dir, childCode);
                             }
                         }
                     }
@@ -1069,18 +1116,19 @@ public sealed class BitOctree
                         for (var index = 0; index < adjacentOctants.Length; index++)
                         {
                             var adjacentOctant = adjacentOctants[index];
+                            var childCode = ChildCode(lc, adjacentOctant);
 
                             if (node.HasChild(adjacentOctant))
                             {
                                 stack.Push(new LogTraversalData
                                 {
-                                    Lc = ChildCode(lc, adjacentOctant),
+                                    Lc = childCode,
                                     Log = (byte)(frame.Log - 1)
                                 });
                             }
                             else
                             {
-                                return true;
+                                builder.AddInterface(dir, childCode);
                             }
                         }
                     }
@@ -1088,12 +1136,14 @@ public sealed class BitOctree
             }
         }
 
-        return false;
+        builder.End(lcFilledNode);
     }
 
-    public IEnumerable<ulong> EnumerateFrontierCells()
+    private Dictionary<ulong, FrontierNodeDataBuffer> GetFrontierData()
     {
-        using (_logTraversalStackPool.Get(out var stack))
+        using var buffer = new FrontierDataBufferBuilder();
+
+        using (_logTraversalStackPool.Handle(out var stack))
         {
             stack.Push(new LogTraversalData
             {
@@ -1108,10 +1158,7 @@ public sealed class BitOctree
 
                 if (node.IsFilled)
                 {
-                    if (IsFrontierCell(lc))
-                    {
-                        yield return lc;
-                    }
+                    BuildFrontierData(lc, buffer);
                 }
                 else
                 {
@@ -1121,12 +1168,7 @@ public sealed class BitOctree
                         {
                             if (node.HasChild(i))
                             {
-                                var childLc = ChildCode(lc, i);
-
-                                if (IsFrontierCell(childLc))
-                                {
-                                    yield return childLc;
-                                }
+                                BuildFrontierData(ChildCode(lc, i), buffer);
                             }
                         }
                     }
@@ -1149,6 +1191,252 @@ public sealed class BitOctree
                 }
             }
         }
+
+        return buffer.Results;
+    }
+
+    public IEnumerable<Vector3d> EnumerateFrontierCells()
+    {
+        var frontierNodes = GetFrontierData();
+
+        if (frontierNodes.Count == 0)
+        {
+            yield break;
+        }
+
+        var pendingNodes = new Dictionary<ulong, FrontierNodeDataBuffer>(frontierNodes);
+        var queue = new Queue<ulong>();
+        var clusters = new List<List<ulong>>();
+
+        var maxNodes = 0;
+
+        while (pendingNodes.Count > 0)
+        {
+            queue.Enqueue(pendingNodes.Keys.First());
+
+            var cluster = new List<ulong>();
+
+            while (queue.Count > 0)
+            {
+                var front = queue.Dequeue();
+
+                if (!pendingNodes.Remove(front, out var info))
+                {
+                    continue;
+                }
+
+                Debug.Assert(!cluster.Contains(front));
+
+                cluster.Add(front);
+
+                for (var i = 0; i < info.Neighbors.Length; i++)
+                {
+                    foreach (var neighbor in info.Neighbors[i])
+                    {
+                        queue.Enqueue(neighbor);
+                    }
+                }
+            }
+            
+            clusters.Add(cluster);
+
+            if (cluster.Count > maxNodes)
+            {
+                maxNodes = cluster.Count;
+            }
+
+            queue.Clear();
+        }
+
+        foreach (var cluster in clusters)
+        {
+            //var hullAvg = new Average3d();
+
+            foreach (var lc in cluster)
+            {
+                if (!frontierNodes.TryGetValue(lc, out var fni))
+                {
+                    continue;
+                }
+
+                var nodeBounds = NodeBounds(lc);
+
+                for (var i = 0; i < 6; i++)
+                {
+                    var normal = (Base6Direction3d)i;
+
+                    if ((fni.MissingDirections & normal.Mask()) != 0)
+                    {
+                        var segment = nodeBounds.ExtrudeNormal(normal);
+                        
+                        yield return Vector3d.Clamp(nodeBounds.Center, segment.Min, segment.Max);
+
+                        //hullSegments.Add(segment);
+                        //hullAvg = Average3d.Combine(hullAvg, Average3d.FromBoundingBox(segment));
+                    }
+
+                    foreach (var @interface in fni.Interfaces[i])
+                    {
+                        var segment = NodeBounds(@interface).SliceNormal(normal);
+                       
+                        yield return Vector3d.Clamp(nodeBounds.Center, segment.Min, segment.Max);
+                        //hullSegments.Add(segment);
+                        //hullAvg = Average3d.Combine(hullAvg, Average3d.FromBoundingBox(segment));
+                    }
+                }
+
+                fni.Dispose();
+            }
+
+            /*foreach (var boundingBox3di in hullSegments)
+            {
+                yield return boundingBox3di.Center;
+            }*/
+
+
+            /*var centroid = hullAvg.Value;
+
+            foreach (var box in hullSegments)
+            {
+                yield return Vector3d.Clamp(centroid, box.Min, box.Max);
+            }*/
+
+            /*
+            var bestCost = double.MaxValue;
+            var bestPos = default(Vector3d);
+
+            var center = new Vector3d(EdgeSize / 2d);
+
+            for (var index = 0; index < hullSegments.Count; index++)
+            {
+                var box = hullSegments[index];
+                var pos = Vector3d.Clamp(centroid, box.Min, box.Max);
+                var cost = Vector3d.DistanceSqr(pos, centroid);
+
+                if (cost < bestCost)
+                {
+                    bestCost = cost;
+                    bestPos = pos;
+                }
+                else if (cost.ApproxEq(bestCost))
+                {
+                    if (Vector3d.DistanceSqr(pos, center) < Vector3d.DistanceSqr(bestPos, center))
+                    {
+                        bestPos = pos;
+                    }
+                }
+            }
+
+            yield return bestPos;
+            */
+            
+            //hullSegments.Clear();
+        }
+    }
+
+    private sealed class FrontierDataBufferBuilder : IDisposable
+    {
+        private Base6Direction3dMask _missingDirections;
+        private HashSet<ulong>[] _neighbors = FrontierNodeDataBuffer.Pool.Rent();
+        private HashSet<ulong>[] _interfaces = FrontierNodeDataBuffer.Pool.Rent();
+        private bool _isFrontier;
+
+        public readonly Dictionary<ulong, FrontierNodeDataBuffer> Results = new();
+
+        public void AddMissingFace(Base6Direction3d direction)
+        {
+            _isFrontier = true;
+            _missingDirections |= direction.Mask();
+        }
+
+        public void AddNeighbor(Base6Direction3d direction, ulong node)
+        {
+            _neighbors[(int)direction].Add(node);
+        }
+
+        public void AddInterface(Base6Direction3d direction, ulong node)
+        {
+            _isFrontier = true;
+            _interfaces[(int)direction].Add(node);
+        }
+
+        public void End(ulong node)
+        {
+            if (_isFrontier)
+            {
+                Results.Add(node, new FrontierNodeDataBuffer(_missingDirections, _neighbors, _interfaces));
+                _neighbors = FrontierNodeDataBuffer.Pool.Rent();
+                _interfaces = FrontierNodeDataBuffer.Pool.Rent();
+            }
+            else
+            {
+                FrontierNodeDataBuffer.ClearArray(_neighbors);
+                FrontierNodeDataBuffer.ClearArray(_interfaces);
+            }
+
+            _isFrontier = false;
+            _missingDirections = 0;
+        }
+
+        public void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            FrontierNodeDataBuffer.Pool.Return(_neighbors);
+            FrontierNodeDataBuffer.Pool.Return(_interfaces);
+        }
+
+        ~FrontierDataBufferBuilder()
+        {
+            Assert.Fail("Did not dispose");       
+        }
+    }
+
+    private sealed class FrontierNodeDataBuffer : IDisposable
+    {
+        public Base6Direction3dMask MissingDirections { get; }
+        public HashSet<ulong>[] Neighbors { get; }
+        public HashSet<ulong>[] Interfaces { get; }
+
+        public FrontierNodeDataBuffer(Base6Direction3dMask missingDirections, HashSet<ulong>[] neighbors, HashSet<ulong>[] interfaces)
+        {
+            MissingDirections = missingDirections;
+            Neighbors = neighbors;
+            Interfaces = interfaces;
+        }
+
+        public void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            Pool.Return(Neighbors);
+            Pool.Return(Interfaces);
+        }
+
+        ~FrontierNodeDataBuffer()
+        {
+            Assert.Fail("Did not dispose");
+        }
+
+        public static readonly Pool<HashSet<ulong>[]> Pool = new(AllocateArray, ClearArray, maxItems: 1024 * 32);
+
+        private static HashSet<ulong>[] AllocateArray()
+        {
+            var array = new HashSet<ulong>[6];
+
+            for (var i = 0; i < 6; i++)
+            {
+                array[i] = new HashSet<ulong>();
+            }
+
+            return array;
+        }
+
+        public static void ClearArray(HashSet<ulong>[] array)
+        {
+            for (var i = 0; i < array.Length; i++)
+            {
+                array[i].Clear();
+            }
+        }
     }
 
     #endregion
@@ -1164,7 +1452,7 @@ public sealed class BitOctree
     public Vector3di DecodePosition(ulong lc)
     {
         var lzm = 63 - BitOperations.LeadingZeroCount(lc);
-        var cb = lc & ~(1UL << lzm);
+        var cb = lc & ~(1UL  << lzm);
         return MortonCode3D.Decode(cb << (Log - lzm / 3) * 3);
     }
 
