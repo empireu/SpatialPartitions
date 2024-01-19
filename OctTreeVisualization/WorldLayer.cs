@@ -359,16 +359,24 @@ internal sealed class WorldLayer : VisualizationLayer3d
             return;
         }
 
-        foreach (var posD in _octree.EnumerateFrontierCells())
+        var count = 0;
+
+        foreach (var tile in _octree.EnumerateFrontierCells(new Vector3di(_placeX, _placeY, _placeZ)).Take(5))
         {
-            Vector3 pos = posD;
+            ++count;
+
+            Console.WriteLine(tile);
+
+            Vector3 pos = tile;
 
             batch.ColoredQuadBox(
-                pos - new Vector3(0.25f),
-                pos + new Vector3(0.25f),
+                pos,
+                pos + new Vector3(1.1f),
                 new QuadColors(1, 1, 1, 1)
             );
         }
+
+        Console.WriteLine($"{count}f\n");
     }
 
     protected override void RenderStack()

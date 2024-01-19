@@ -305,6 +305,12 @@ public readonly struct Vector3di : IComparable<Vector3di>
         Math.Clamp(v.Z, min.Z, max.Z)
     );
 
+    public static Vector3di ClampExclusive(Vector3di v, Vector3di min, Vector3di maxExclusive) => new(
+        Math.Clamp(v.X, min.X, maxExclusive.X - 1),
+        Math.Clamp(v.Y, min.Y, maxExclusive.Y - 1),
+        Math.Clamp(v.Z, min.Z, maxExclusive.Z - 1)
+    );
+
     public static Vector3di Clamp(Vector3di v, int min, int max) => new(
         Math.Clamp(v.X, min, max),
         Math.Clamp(v.Y, min, max),
@@ -355,6 +361,7 @@ public readonly struct Vector3d
     public Vector3d Normalized() => this / Norm;
 
     public static double Dot(Vector3d a, Vector3d b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+    
     public static Vector3d Cross(Vector3d a, Vector3d b) => new(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X);
     public static double DistanceSqr(Vector3d a, Vector3d b) => (a - b).NormSqr;
     public static double Distance(Vector3d a, Vector3d b) => (a - b).Norm;
@@ -386,6 +393,9 @@ public readonly struct Vector3d
 
     public static Vector3d Clamp(Vector3d value, Vector3d min, Vector3d max) =>
         Min(Max(value, min), max);
+
+    public static double Angle(Vector3d a, Vector3d b) =>
+        Math.Acos(Math.Clamp(Vector3d.Dot(a, b) / (a.Norm * b.Norm), -1, +1));
 }
 
 public readonly struct BoundingBox3di

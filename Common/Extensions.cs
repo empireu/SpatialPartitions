@@ -349,10 +349,10 @@ public static class Extensions
         }
     }
     
-    public static BoundingBox3di ExtrudeNormal(this BoundingBox3di @base, Base6Direction3d direction, int height = 1)
+    public static BoundingBox3di ExtrudeNormal(this BoundingBox3di box, Base6Direction3d direction, int height = 1)
     {
-        var min = @base.Min;
-        var max = @base.Max;
+        var min = box.Min;
+        var max = box.Max;
 
         return direction switch
         {
@@ -378,10 +378,10 @@ public static class Extensions
         };
     }
 
-    public static BoundingBox3di SliceNormal(this BoundingBox3di @base, Base6Direction3d direction, int height = 1)
+    public static BoundingBox3di SliceNormal(this BoundingBox3di box, Base6Direction3d direction, int height = 1)
     {
-        var min = @base.Min;
-        var max = @base.Max;
+        var min = box.Min;
+        var max = box.Max;
 
         return direction switch
         {
@@ -407,4 +407,38 @@ public static class Extensions
         };
     }
 
+    public static BoundingBox3di InnerFace(this BoundingBox3di box, Base6Direction3d direction)
+    {
+        var min = box.Min;
+        var max = box.Max;
+
+        return direction switch
+        {
+            Base6Direction3d.L => new BoundingBox3di(min, new Vector3di(min.X + 1, max.Y, max.Z)),
+            Base6Direction3d.R => new BoundingBox3di(new Vector3di(max.X - 1, min.Y, min.Z), max),
+            Base6Direction3d.U => new BoundingBox3di(new Vector3di(min.X, max.Y - 1, min.Z), max),
+            Base6Direction3d.D => new BoundingBox3di(min, new Vector3di(max.X, min.Y + 1, max.Z)),
+            Base6Direction3d.F => new BoundingBox3di(min, new Vector3di(max.X, max.Y, min.Z + 1)),
+            Base6Direction3d.B => new BoundingBox3di(new Vector3di(min.X, min.Y, max.Z - 1), max),
+            _ => throw new ArgumentOutOfRangeException()
+        };
+    }
+
+
+    public static BoundingBox3di TranslateNormal(this BoundingBox3di box, Base6Direction3d direction, int distance = 1)
+    {
+        var step = direction.Step() * distance;
+        return new BoundingBox3di(box.Min + step, box.Max + step);
+    }
+
+    public static int SizeAlong(this BoundingBox3di box, Base6Direction3d direction) => direction switch
+    {
+        Base6Direction3d.L => box.Max.X - box.Min.X,
+        Base6Direction3d.R => box.Max.X - box.Min.X,
+        Base6Direction3d.U => box.Max.Y - box.Min.Y,
+        Base6Direction3d.D => box.Max.Y - box.Min.Y,
+        Base6Direction3d.F => box.Max.Z - box.Min.Z,
+        Base6Direction3d.B => box.Max.Z - box.Min.Z,
+        _ => throw new ArgumentOutOfRangeException(nameof(direction), direction, null)
+    };
 }

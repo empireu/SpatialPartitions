@@ -424,7 +424,6 @@ public struct Average2d
     public void Add(Vector2d value) => Add(value.X, value.Y);
 }
 
-
 public struct Average3d
 {
     public int Count { get; private set; }
