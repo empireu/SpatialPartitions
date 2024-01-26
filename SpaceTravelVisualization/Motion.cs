@@ -37,7 +37,7 @@ internal static class TrajectoryGenerator
     private const double TimeTolerance = 1e-6;
     private const double GeometricTolerance = 1e-6;
     private const double AngleTolerance = 1e-5;
-    private const double ResultForceTolerance = 1e-2;
+    private const double ResultForceTolerance = 1e-6;
     private const int MaxIterations = 128;
 
     // Implementation from https://mmoarch.blogspot.com/

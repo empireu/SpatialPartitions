@@ -8,110 +8,110 @@ using Veldrid;
 
 namespace SpaceTravelVisualization;
 
-
 internal sealed class WorldLayer : VisualizationLayer3d
 {
     private sealed class Simulation
     {
+        private readonly double _shipMass;
+
+        public Vector3d ShipPos { get; private set; }
+        public Vector3d ShipVel { get; private set; }
+        public Vector3d TargetPos { get; private set; }
+        public Vector3d TargetVel { get; private set; }
+
+        public readonly TrajectoryLeg[] Trajectory;
+
         public double Time { get; private set; }
-        private readonly double _shipForce;
-        protected double _shipMass;
-        private readonly Vector3d _targetAccel;
 
-        private TrajectoryLeg[]? _trajectory;
-        public IReadOnlyList<TrajectoryLeg>? Trajectory => _trajectory;
-
-        protected readonly List<Vector3d> _history = new();
-
-        public IReadOnlyList<Vector3d> History => _history;
-
-        public Vector3d ShipPos { get; protected set; }
-        public Vector3d ShipVel { get; protected set; }
-        public Vector3d TargetPos { get; protected set; }
-        public Vector3d TargetVel { get; protected set; }
+        public bool Done { get; private set; }
 
         public Simulation(
             Vector3d shipPos, 
             Vector3d shipVel, 
-            double shipForce,
-            double shipMass, 
             Vector3d targetPos, 
-            Vector3d targetVel, 
-            Vector3d targetAccel)
+            Vector3d targetVel,
+            double shipMass,
+            TrajectoryLeg[] trajectory
+        ) 
         {
-            _shipForce = shipForce;
-            _shipMass = shipMass;
-            _targetAccel = targetAccel;
             ShipPos = shipPos;
             ShipVel = shipVel;
             TargetPos = targetPos;
             TargetVel = targetVel;
+            _shipMass = shipMass;
+            Trajectory = trajectory;
         }
+
+        public readonly List<Vector3d> History = new();
 
         public void Update(double dt)
         {
-            var parameters = new TrajectoryParameters(
-                ShipPos, ShipVel, TargetPos, TargetVel,
-                _shipForce, _shipMass
-            );
-
-            var trajectory = TrajectoryGenerator.ComputeRendezvousTrajectory(parameters);
-
-            _trajectory = trajectory;
-
-            if (trajectory == null)
+            if (Done)
             {
                 return;
             }
 
             TrajectoryLeg leg;
 
-            var Time = 0.0;
-
-            if (trajectory.Length == 1)
+            if (Trajectory.Length == 1)
             {
-                if (Time < trajectory[0].Duration)
+                if (Time < Trajectory[0].Duration)
                 {
-                    leg = trajectory[0];
+                    leg = Trajectory[0];
                 }
                 else
                 {
+                    Done = true;
                     return;
                 }
             }
             else
             {
-                if (Time < trajectory[0].Duration)
+                if (Time < Trajectory[0].Duration)
                 {
-                    leg = trajectory[0];
+                    leg = Trajectory[0];
                 }
-                else if (Time < trajectory[0].Duration + trajectory[1].Duration)
+                else if (Time < Trajectory[0].Duration + Trajectory[1].Duration)
                 {
-                    leg = trajectory[1];
+                    leg = Trajectory[1];
                 }
                 else
                 {
+                    Done = true;
                     return;
                 }
             }
 
-            var acceleration = leg.Force / _shipMass;
-
-            ShipVel += acceleration * dt;
+            ShipVel += (leg.Force / _shipMass) * dt;
             ShipPos += ShipVel * dt;
-            TargetVel += _targetAccel * dt;
             TargetPos += TargetVel * dt;
-
             Time += dt;
 
-            if (_history.Count == 0)
+            if (History.Count == 0)
             {
-                _history.Add(ShipPos);
+                History.Add(ShipPos);
             }
-            else if (Vector3d.DistanceSqr(_history.Last(), ShipPos) > 0.25)
+            else if (Vector3d.DistanceSqr(History.Last(), ShipPos) > 0.25)
             {
-                _history.Add(ShipPos);
+                History.Add(ShipPos);
             }
+        }
+
+        public static Simulation? Create(
+            Vector3d shipPos, Vector3d shipVel, 
+            Vector3d targetPos, Vector3d targetVel,
+            double shipForce, double shipMass
+        )
+        {
+            var parameters = new TrajectoryParameters(shipPos, shipVel, targetPos, targetVel, shipForce, shipMass);
+            var trajectory = TrajectoryGenerator.ComputeRendezvousTrajectory(parameters);
+
+            if (trajectory == null)
+            {
+                return null;
+            }
+
+            return new Simulation(shipPos, shipVel, targetPos, targetVel, shipMass, trajectory);
         }
     }
 
@@ -119,12 +119,12 @@ internal sealed class WorldLayer : VisualizationLayer3d
     private Vector3 _shipVel;
     private Vector3 _targetPos = Vector3.One;
     private Vector3 _targetVel;
-    private Vector3 _targetAccel;
     private double _force = 1f;
     private double _mass = 1;
     private float _speed = 1;
 
     private Simulation? _simulation;
+    private string _lastMessage = "Waiting";
 
     public WorldLayer(VisualizationApp app, ImGuiLayer imGui) : base(app, imGui)
     {
@@ -141,11 +141,18 @@ internal sealed class WorldLayer : VisualizationLayer3d
             ImGui.InputDouble("Mass", ref _mass);
             ImGui.InputFloat3("Target Pos", ref _targetPos);
             ImGui.InputFloat3("Target Vel", ref _targetVel);
-            ImGui.InputFloat3("Target Accel", ref _targetAccel);
+
+            ImGui.Separator();
+            ImGui.Text(_lastMessage);
 
             if (ImGui.Button("Start"))
             {
-                _simulation = new Simulation(_shipPos, _shipVel, _force, _mass, _targetPos, _targetVel, _targetAccel);
+                _simulation = Simulation.Create(_shipPos, _shipVel, _targetPos, _targetVel, _force, _mass);
+
+                if (_simulation == null)
+                {
+                    _lastMessage = "Failed to create trajectory";
+                }
             }
 
             ImGui.Separator();
@@ -154,21 +161,15 @@ internal sealed class WorldLayer : VisualizationLayer3d
 
             if (_simulation != null)
             {
-                if (_simulation.Trajectory == null)
-                {
-                    ImGui.Text("Trajectory: nil");
-                }
-                else
-                {
-                    ImGui.Text($"Trajectory: {_simulation.Trajectory.Count} segments, " +
-                               $"{(_simulation.Trajectory.Count == 1 
-                                   ? ($"a: {_simulation.Trajectory[0].Duration:F3}") 
-                                   : ($"a: {_simulation.Trajectory[0].Duration:F3}, b: {_simulation.Trajectory[1].Duration:F3}"))}");
+                ImGui.Text($"t1={_simulation.Trajectory[0].Duration:F4}, t2={_simulation.Trajectory[1].Duration:F4}");
+                ImGui.Text($"T={_simulation.Trajectory[0].Duration + _simulation.Trajectory[1].Duration:F4}");
+                ImGui.Text($"f1={_simulation.Trajectory[0].Force.Norm:F4}, f2={_simulation.Trajectory[1].Force.Norm:F4}");
 
-                }
-                ImGui.Text($"T+{_simulation.Time:F4}");
-                ImGui.Text($"Ship Velocity [X={_simulation.ShipVel.X:F2} Y={_simulation.ShipVel.Y:F2} Z={_simulation.ShipVel.Z:F2}]");
-                ImGui.Text($"Distance: {Vector3d.Distance(_simulation.ShipPos, _simulation.TargetPos):F2}");
+                ImGui.Separator();
+
+                ImGui.Text(_simulation.Done ? "T Done" : $"T+{_simulation.Time:F4}");
+                ImGui.Text($"Ship [Dx={_simulation.ShipVel.X:F2}, Dy={_simulation.ShipVel.Y:F2}, Dz={_simulation.ShipVel.Z:F2}]");
+                ImGui.Text($"Distance: {Vector3d.Distance(_simulation.ShipPos, _simulation.TargetPos):F6}");
             }
         }
 
@@ -179,7 +180,7 @@ internal sealed class WorldLayer : VisualizationLayer3d
     {
         base.Update(frameInfo);
 
-        const int subSteps = 10;
+        const int subSteps = 10_000;
         var dt = ((double)frameInfo.DeltaTime) / subSteps * _speed;
 
         for (var i = 0; i < subSteps; i++)
